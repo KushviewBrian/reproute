@@ -17,6 +17,8 @@ class Settings(BaseSettings):
 
     clerk_jwt_issuer: str = ""
     clerk_jwks_url: str = ""
+    clerk_audience: str = ""
+    clerk_authorized_party: str = ""
 
     geocode_worker_url: str = "https://example.workers.dev/geocode"
     geocode_timeout_seconds: int = 4

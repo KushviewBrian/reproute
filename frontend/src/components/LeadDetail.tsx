@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { createNote, listNotes, saveLead, type Lead, updateSavedLead } from "../api/client";
+import { enqueueNote, flushQueuedNotes, getQueuedCount } from "../lib/offlineQueue";
 
 type Props = {
   lead: Lead | null;
@@ -15,12 +16,29 @@ export function LeadDetail({ lead, routeId, token, onClose }: Props) {
   const [notes, setNotes] = useState<{ id: string; note_text: string; created_at: string }[]>([]);
   const [noteText, setNoteText] = useState("");
   const [status, setStatus] = useState("saved");
+  const [queueCount, setQueueCount] = useState(0);
 
   useEffect(() => {
     if (!lead) return;
     listNotes(lead.business_id, token)
       .then((rows) => setNotes(rows))
       .catch(() => setNotes([]));
+    setQueueCount(getQueuedCount());
+  }, [lead, token]);
+
+  useEffect(() => {
+    async function flushWhenOnline() {
+      if (!navigator.onLine || !token) return;
+      const flushed = await flushQueuedNotes(token);
+      if (flushed.length > 0 && lead) {
+        const latest = await listNotes(lead.business_id, token).catch(() => []);
+        setNotes(latest);
+      }
+      setQueueCount(getQueuedCount());
+    }
+    flushWhenOnline();
+    window.addEventListener("online", flushWhenOnline);
+    return () => window.removeEventListener("online", flushWhenOnline);
   }, [lead, token]);
 
   if (!lead) return null;
@@ -32,6 +50,13 @@ export function LeadDetail({ lead, routeId, token, onClose }: Props) {
 
   async function addNote() {
     if (!noteText.trim()) return;
+    if (!navigator.onLine || !token) {
+      enqueueNote({ business_id: lead.business_id, route_id: routeId, note_text: noteText, outcome_status: status });
+      setNotes((prev) => [{ id: `queued-${Date.now()}`, note_text: `${noteText} (queued offline)`, created_at: new Date().toISOString() }, ...prev]);
+      setNoteText("");
+      setQueueCount(getQueuedCount());
+      return;
+    }
     const created = await createNote(
       { business_id: lead.business_id, route_id: routeId, note_text: noteText, outcome_status: status },
       token,
@@ -64,6 +89,7 @@ export function LeadDetail({ lead, routeId, token, onClose }: Props) {
       <button onClick={saveWithStatus}>Save Lead</button>
 
       <h4>Notes</h4>
+      {queueCount > 0 && <p className="meta">{queueCount} queued note(s) waiting for connection</p>}
       <textarea value={noteText} onChange={(e) => setNoteText(e.target.value)} rows={3} />
       <button onClick={addNote}>Add Note</button>
       <ul className="note-list">

@@ -7,6 +7,7 @@ import { LeadList } from "../components/LeadList";
 import { MapPanel } from "../components/MapPanel";
 import { RouteForm } from "../components/RouteForm";
 import { SavedLeads } from "../components/SavedLeads";
+import { cacheRouteLeads, readCachedRouteLeads } from "../lib/leadCache";
 
 type Tab = "route" | "saved";
 
@@ -23,6 +24,7 @@ export function App() {
   const [corridor, setCorridor] = useState(1609);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [cacheMeta, setCacheMeta] = useState<string | null>(null);
 
   useEffect(() => {
     getToken().then((t) => setToken(t ?? undefined));
@@ -31,8 +33,20 @@ export function App() {
   const loadLeads = useCallback(
     async (id: string) => {
       if (!token) return;
-      const data = await fetchLeads(id, token, { minScore, hasPhone, hasWebsite, limit: 100 });
-      setLeads(data.leads);
+      try {
+        const data = await fetchLeads(id, token, { minScore, hasPhone, hasWebsite, limit: 100 });
+        setLeads(data.leads);
+        cacheRouteLeads(id, data.leads);
+        setCacheMeta(null);
+      } catch (err) {
+        const cached = readCachedRouteLeads(id);
+        if (cached) {
+          setLeads(cached.leads);
+          setCacheMeta(`Showing cached leads from ${new Date(cached.updatedAt).toLocaleString()}`);
+          return;
+        }
+        throw err;
+      }
     },
     [token, minScore, hasPhone, hasWebsite],
   );
@@ -103,6 +117,7 @@ export function App() {
           <>
             <RouteForm onCreated={onCreated} token={token} />
             {routeId && <p className="meta">Route ID: {routeId}</p>}
+            {cacheMeta && <p className="meta">{cacheMeta}</p>}
             {error && <p className="error">{error}</p>}
             <section className="panel">
               <h3>Filters</h3>

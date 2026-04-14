@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from functools import lru_cache
 
 import httpx
@@ -78,6 +79,25 @@ async def get_current_user(
     issuer = claims.get("iss")
     if settings.clerk_jwt_issuer and issuer and settings.clerk_jwt_issuer.rstrip("/") != issuer.rstrip("/"):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token issuer")
+
+    exp = claims.get("exp")
+    if exp is not None:
+        now = datetime.now(timezone.utc).timestamp()
+        if float(exp) < now:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token expired")
+
+    if settings.clerk_audience:
+        aud = claims.get("aud")
+        if isinstance(aud, list):
+            if settings.clerk_audience not in aud:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token audience")
+        elif aud != settings.clerk_audience:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token audience")
+
+    if settings.clerk_authorized_party:
+        azp = claims.get("azp")
+        if azp != settings.clerk_authorized_party:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token party")
 
     email = claims.get("email") or claims.get("primary_email_address")
     if not email:

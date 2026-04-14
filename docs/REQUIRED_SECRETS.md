@@ -13,6 +13,9 @@ Populate these while implementation continues.
 - `CLERK_SECRET_KEY`
 - `CLERK_PUBLISHABLE_KEY`
 - `CLERK_JWT_ISSUER`
+- `CLERK_JWKS_URL`
+- `CLERK_AUDIENCE` (if configured in Clerk)
+- `CLERK_AUTHORIZED_PARTY` (if configured in Clerk)
 
 ## Runtime env vars
 
@@ -20,6 +23,5 @@ See `.env.example` for complete local defaults.
 
 ## Placeholder integration status
 
-- Backend JWT verification currently parses unverified claims with issuer check.
-- Replace with full JWKS verification once Clerk tenant values are available.
+- Backend JWT verification supports JWKS signature verification + issuer/audience/azp checks when configured.
 - Geocoding target points to `GEOCODE_WORKER_URL` placeholder until Worker is deployed.
