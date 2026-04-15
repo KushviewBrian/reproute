@@ -22,9 +22,6 @@ jobs:
       - name: Install script dependencies
         run: pip install overturemaps duckdb==1.4.1 "sqlalchemy==2.0.43" "psycopg[binary]==3.2.10" shapely
 
-      - name: Install classification service
-        run: pip install -e backend/ --no-deps
-
       - name: Download Overture places
         run: |
           overturemaps download \
@@ -37,6 +34,6 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.INGEST_DATABASE_URL }}
         run: |
-          python scripts/ingest_overture.py \
+          PYTHONPATH=$PYTHONPATH:$(pwd) python scripts/ingest_overture.py \
             --parquet /tmp/places.parquet \
             --database-url "$DATABASE_URL"
