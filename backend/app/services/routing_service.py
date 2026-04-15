@@ -51,7 +51,7 @@ async def get_route(origin_lat: float, origin_lng: float, destination_lat: float
     if cached:
         return json.loads(cached)
 
-    if settings.poc_mode and not settings.ors_api_key:
+    if not settings.ors_api_key:
         data = _mock_route(origin_lat, origin_lng, destination_lat, destination_lng)
         await redis_client.set(key, json.dumps(data), ex=settings.route_cache_ttl_seconds)
         return data
