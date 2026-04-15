@@ -17,10 +17,23 @@ services:
       - key: POC_MODE
         value: "true"
       - key: CORS_ALLOW_ORIGINS
-        value: https://reproute.onrender.com
+        value: https://reproute-8vhf.onrender.com
       - key: GEOCODE_WORKER_URL
         value: https://photon.komoot.io/api/
       - key: ORS_BASE_URL
         value: https://api.openrouteservice.org
       - key: ORS_API_KEY
+        sync: false
+
+  - type: web
+    name: reproute-frontend
+    runtime: docker
+    dockerfilePath: frontend/Dockerfile
+    dockerContext: .
+    healthCheckPath: /
+    dockerBuildArgs:
+      - VITE_API_BASE_URL=https://reproute.onrender.com
+      - VITE_MAP_PMTILES_URL=https://protomaps.github.io/basemaps-assets/tiles/v3/{z}/{x}/{y}.mvt
+    envVars:
+      - key: VITE_CLERK_PUBLISHABLE_KEY
         sync: false
