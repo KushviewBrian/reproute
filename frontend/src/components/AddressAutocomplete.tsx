@@ -29,6 +29,7 @@ export function AddressAutocomplete({ id, label, placeholder, token, disabled, i
   const [open, setOpen] = useState(false);
   const [resolved, setResolved] = useState(!!initialLabel);
   const [activeIndex, setActiveIndex] = useState(-1);
+  const [fetchError, setFetchError] = useState(false);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -48,8 +49,13 @@ export function AddressAutocomplete({ id, label, placeholder, token, disabled, i
   function handleChange(raw: string) {
     setValue(raw);
     setResolved(false);
-    onClear();
     setActiveIndex(-1);
+
+    // Only propagate clear when the field is actually empty
+    if (raw.trim() === "") {
+      onClear();
+      setFetchError(false);
+    }
 
     if (debounceRef.current) clearTimeout(debounceRef.current);
 
@@ -61,11 +67,14 @@ export function AddressAutocomplete({ id, label, placeholder, token, disabled, i
 
     debounceRef.current = setTimeout(async () => {
       setLoading(true);
+      setFetchError(false);
       try {
         const data = await geocode(raw, token);
         setResults(data.results.slice(0, 6));
         setOpen(data.results.length > 0);
-      } catch {
+      } catch (err) {
+        console.error("Geocode error:", err);
+        setFetchError(true);
         setResults([]);
         setOpen(false);
       } finally {
@@ -157,6 +166,10 @@ export function AddressAutocomplete({ id, label, placeholder, token, disabled, i
         )}
       </div>
 
+      {fetchError && (
+        <p className="autocomplete-fetch-error">Search unavailable — check API connection</p>
+      )}
+
       {open && results.length > 0 && (
         <ul
           className="autocomplete-dropdown"
@@ -173,7 +186,7 @@ export function AddressAutocomplete({ id, label, placeholder, token, disabled, i
                 className={`autocomplete-option${i === activeIndex ? " active" : ""}`}
                 role="option"
                 aria-selected={i === activeIndex}
-                onPointerDown={(e) => e.preventDefault()} // prevent blur before click
+                onMouseDown={(e) => e.preventDefault()} // prevent input blur before click fires
                 onClick={() => selectResult(r)}
               >
                 <span className="autocomplete-option-icon">

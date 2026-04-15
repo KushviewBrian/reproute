@@ -992,6 +992,13 @@ body { min-height: 100dvh; }
   color: var(--brand-700, var(--brand-600));
 }
 
+.autocomplete-fetch-error {
+  font-size: 0.7rem;
+  color: #b91c1c;
+  margin-top: 0.25rem;
+  padding: 0 0.125rem;
+}
+
 .autocomplete-option-secondary {
   font-size: 0.7rem;
   color: var(--gray-400);
