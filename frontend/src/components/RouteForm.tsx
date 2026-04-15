@@ -2,6 +2,7 @@ import { useState } from "react";
 
 import { createRoute, geocode } from "../api/client";
 
+
 type ResolvedLocation = { label: string; lat: number; lng: number };
 
 type Props = {
@@ -25,14 +26,14 @@ function IconSearch() {
   );
 }
 
-async function resolveAddress(text: string, token?: string): Promise<ResolvedLocation> {
+async function resolveAddress(text: string): Promise<ResolvedLocation> {
   const trimmed = text.trim();
   // Accept bare "lat, lng" entry
   const coordMatch = trimmed.match(/^(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)$/);
   if (coordMatch) {
     return { label: trimmed, lat: parseFloat(coordMatch[1]), lng: parseFloat(coordMatch[2]) };
   }
-  const data = await geocode(trimmed, token);
+  const data = await geocode(trimmed);
   if (!data.results.length) throw new Error(`No results for "${trimmed}"`);
   return data.results[0];
 }
@@ -69,12 +70,12 @@ export function RouteForm({ token, onCreated }: Props) {
       let originLoc: ResolvedLocation;
       let destLoc: ResolvedLocation;
       try {
-        originLoc = await resolveAddress(originText, token);
+        originLoc = await resolveAddress(originText);
       } catch {
         throw new Error(`Origin: no results for "${originText}"`);
       }
       try {
-        destLoc = await resolveAddress(destText, token);
+        destLoc = await resolveAddress(destText);
       } catch {
         throw new Error(`Destination: no results for "${destText}"`);
       }
