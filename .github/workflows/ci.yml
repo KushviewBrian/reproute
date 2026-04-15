@@ -38,11 +38,9 @@ jobs:
 
   deploy:
     if: github.ref == 'refs/heads/main'
-    needs: [backend, frontend]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Deploy placeholders
         run: |
-          echo "Add Render deploy + wrangler deploy once secrets are configured."
-          echo "See docs/REQUIRED_SECRETS.md"
+          echo "Render deploys automatically on push."
