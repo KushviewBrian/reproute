@@ -81,11 +81,12 @@ async def get_current_user(
     if exp is not None and float(exp) < datetime.now(timezone.utc).timestamp():
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token expired")
 
-    email = claims.get("email") or claims.get("primary_email_address")
+    # Use email if present, fall back to Clerk's sub (user ID)
+    email = claims.get("email") or claims.get("primary_email_address") or claims.get("sub")
     if not email:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token missing email")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token missing identity")
 
-    # Return cached user if we've seen this email before
+    # Return cached user if we've seen this identity before
     if email in _user_cache:
         return _user_cache[email]
 
