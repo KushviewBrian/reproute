@@ -10,18 +10,14 @@ services:
         sync: false
       - key: REDIS_URL
         sync: false
-      - key: CLERK_JWT_ISSUER
-        sync: false
-      - key: CLERK_JWKS_URL
-        sync: false
       - key: SECRET_KEY
         generateValue: true
       - key: ENVIRONMENT
         value: production
       - key: POC_MODE
-        value: "false"
+        value: "true"
       - key: CORS_ALLOW_ORIGINS
-        sync: false
+        value: https://reproute.onrender.com
       - key: GEOCODE_WORKER_URL
         value: https://photon.komoot.io/api/
       - key: ORS_BASE_URL

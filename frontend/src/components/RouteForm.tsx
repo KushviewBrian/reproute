@@ -1,11 +1,11 @@
 import { useState } from "react";
 
-import { createRoute } from "../api/client";
-import { AddressAutocomplete, type ResolvedLocation } from "./AddressAutocomplete";
+import { createRoute, geocode } from "../api/client";
+
+type ResolvedLocation = { label: string; lat: number; lng: number };
 
 type Props = {
   token?: string;
-  authRequired: boolean;
   onCreated: (created: { routeId: string; routeGeoJson: GeoJSON.LineString }) => void;
 };
 
@@ -25,31 +25,33 @@ function IconSearch() {
   );
 }
 
-export function RouteForm({ token, authRequired, onCreated }: Props) {
-  const [originLoc, setOriginLoc] = useState<ResolvedLocation | null>(null);
-  const [destinationLoc, setDestinationLoc] = useState<ResolvedLocation | null>(null);
+async function resolveAddress(text: string, token?: string): Promise<ResolvedLocation> {
+  const trimmed = text.trim();
+  // Accept bare "lat, lng" entry
+  const coordMatch = trimmed.match(/^(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)$/);
+  if (coordMatch) {
+    return { label: trimmed, lat: parseFloat(coordMatch[1]), lng: parseFloat(coordMatch[2]) };
+  }
+  const data = await geocode(trimmed, token);
+  if (!data.results.length) throw new Error(`No results for "${trimmed}"`);
+  return data.results[0];
+}
+
+export function RouteForm({ token, onCreated }: Props) {
+  const [originText, setOriginText] = useState("");
+  const [destText, setDestText] = useState("");
   const [corridor, setCorridor] = useState(1609);
   const [loading, setLoading] = useState(false);
   const [locating, setLocating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [originKey, setOriginKey] = useState(0); // force re-mount to reset input after "use location"
 
-  const disabled = authRequired && !token;
-  const canSubmit = !disabled && !!originLoc && !!destinationLoc && !loading;
+  const canSubmit = !!originText.trim() && !!destText.trim() && !loading;
 
   function useMyLocation() {
     setLocating(true);
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        // Inject as a resolved location directly — no geocoding needed
-        const loc: ResolvedLocation = {
-          label: `${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)}`,
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude,
-        };
-        setOriginLoc(loc);
-        // Re-mount the autocomplete so it shows the new label
-        setOriginKey((k) => k + 1);
+        setOriginText(`${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)}`);
         setLocating(false);
       },
       () => {
@@ -61,18 +63,30 @@ export function RouteForm({ token, authRequired, onCreated }: Props) {
   }
 
   async function submit() {
-    if (!originLoc || !destinationLoc) return;
     setLoading(true);
     setError(null);
     try {
+      let originLoc: ResolvedLocation;
+      let destLoc: ResolvedLocation;
+      try {
+        originLoc = await resolveAddress(originText, token);
+      } catch {
+        throw new Error(`Origin: no results for "${originText}"`);
+      }
+      try {
+        destLoc = await resolveAddress(destText, token);
+      } catch {
+        throw new Error(`Destination: no results for "${destText}"`);
+      }
+
       const created = await createRoute(
         {
           origin_label: originLoc.label,
           origin_lat: originLoc.lat,
           origin_lng: originLoc.lng,
-          destination_label: destinationLoc.label,
-          destination_lat: destinationLoc.lat,
-          destination_lng: destinationLoc.lng,
+          destination_label: destLoc.label,
+          destination_lat: destLoc.lat,
+          destination_lng: destLoc.lng,
           corridor_width_meters: corridor,
         },
         token,
@@ -89,56 +103,51 @@ export function RouteForm({ token, authRequired, onCreated }: Props) {
     <div className="route-form">
       <h2>Plan Route</h2>
 
-      {disabled && (
-        <p style={{ fontSize: "0.75rem", color: "var(--gray-400)", marginBottom: "0.625rem" }}>
-          Waiting for authentication…
-        </p>
-      )}
-
-      {/* Origin with "use my location" button */}
-      <div className="autocomplete-with-action">
-        <AddressAutocomplete
-          key={originKey}
-          id="origin"
-          label="From"
-          placeholder="Start address, city, or zip"
-          token={token}
-          disabled={disabled}
-          onResolve={setOriginLoc}
-          onClear={() => setOriginLoc(null)}
-          initialLabel={originLoc?.label}
-        />
-        <button
-          type="button"
-          className="btn btn-icon locate-btn"
-          title="Use my current location"
-          onClick={useMyLocation}
-          disabled={disabled || locating}
-        >
-          {locating ? <span className="spinner" /> : <IconLocate />}
-        </button>
+      <div className="form-field">
+        <label htmlFor="origin-input">From</label>
+        <div className="input-row">
+          <input
+            id="origin-input"
+            className="form-input"
+            type="text"
+            placeholder="Start address, city, or zip"
+            value={originText}
+            onChange={(e) => setOriginText(e.target.value)}
+            disabled={loading}
+          />
+          <button
+            type="button"
+            className="btn btn-icon locate-btn"
+            title="Use my current location"
+            onClick={useMyLocation}
+            disabled={loading || locating}
+          >
+            {locating ? <span className="spinner" /> : <IconLocate />}
+          </button>
+        </div>
       </div>
 
-      <AddressAutocomplete
-        id="destination"
-        label="To"
-        placeholder="End address, city, or zip"
-        token={token}
-        disabled={disabled}
-        onResolve={setDestinationLoc}
-        onClear={() => setDestinationLoc(null)}
-      />
+      <div className="form-field">
+        <label htmlFor="dest-input">To</label>
+        <input
+          id="dest-input"
+          className="form-input"
+          type="text"
+          placeholder="End address, city, or zip"
+          value={destText}
+          onChange={(e) => setDestText(e.target.value)}
+          disabled={loading}
+        />
+      </div>
 
-      <div className="form-field" style={{ marginTop: "0.5rem" }}>
-        <label htmlFor="corridor-select" style={{ fontSize: "0.75rem", fontWeight: 500, color: "var(--gray-600)", marginBottom: "0.25rem", display: "block" }}>
-          Corridor width
-        </label>
+      <div className="form-field">
+        <label htmlFor="corridor-select">Corridor width</label>
         <select
           id="corridor-select"
           className="form-select"
           value={corridor}
           onChange={(e) => setCorridor(Number(e.target.value))}
-          disabled={disabled}
+          disabled={loading}
         >
           <option value={805}>0.5 mi — tight focus</option>
           <option value={1609}>1.0 mi — recommended</option>

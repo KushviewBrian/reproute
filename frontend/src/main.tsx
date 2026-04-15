@@ -8,15 +8,11 @@ import { App } from "./pages/App";
 import "./styles/app.css";
 
 const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY || "";
-const pocMode = import.meta.env.VITE_POC_MODE === "true";
 
 function ClerkApp() {
   const { getToken, isSignedIn, isLoaded } = useAuth();
   const [token, setToken] = React.useState<string | undefined>(undefined);
 
-  // Refresh the token whenever sign-in state changes, and keep it fresh
-  // by refreshing every 4 minutes (Clerk tokens expire after 60 min but
-  // this keeps us well ahead of expiry in long sessions).
   React.useEffect(() => {
     if (!isLoaded || !isSignedIn) {
       setToken(undefined);
@@ -40,21 +36,15 @@ function ClerkApp() {
 
   return (
     <BrowserRouter>
-      <App token={token} authRequired />
+      <App token={token} />
     </BrowserRouter>
   );
 }
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    {pocMode ? (
-      <BrowserRouter>
-        <App token={undefined} authRequired={false} />
-      </BrowserRouter>
-    ) : (
-      <ClerkProvider publishableKey={clerkPubKey}>
-        <ClerkApp />
-      </ClerkProvider>
-    )}
+    <ClerkProvider publishableKey={clerkPubKey}>
+      <ClerkApp />
+    </ClerkProvider>
   </React.StrictMode>
 );

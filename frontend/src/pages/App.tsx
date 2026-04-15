@@ -13,10 +13,8 @@ type Tab = "route" | "saved";
 
 type AppProps = {
   token?: string;
-  authRequired: boolean;
 };
 
-// ── Inline SVG icons (no extra dep) ──────────────────────────────────────────
 function IconRoute() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -58,9 +56,7 @@ function IconDatabase() {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-
-export function App({ token, authRequired }: AppProps) {
+export function App({ token }: AppProps) {
   const [tab, setTab] = useState<Tab>("route");
   const [routeId, setRouteId] = useState<string | null>(null);
   const [routeGeoJson, setRouteGeoJson] = useState<GeoJSON.LineString | null>(null);
@@ -133,7 +129,6 @@ export function App({ token, authRequired }: AppProps) {
 
   const appContent = (
     <div className="app-body">
-      {/* ── Sidebar ── */}
       <aside className="sidebar">
         <div className="sidebar-tabs">
           <button
@@ -155,9 +150,8 @@ export function App({ token, authRequired }: AppProps) {
         <div className="sidebar-scroll">
           {tab === "route" && (
             <>
-              <RouteForm onCreated={onCreated} token={token} authRequired={authRequired} />
+              <RouteForm onCreated={onCreated} token={token} />
 
-              {/* Filter strip */}
               <div className="filter-strip">
                 <h3>Filters</h3>
 
@@ -211,7 +205,6 @@ export function App({ token, authRequired }: AppProps) {
                 </button>
               </div>
 
-              {/* Banners */}
               {error && (
                 <div className="error-banner">
                   <IconAlert />
@@ -239,7 +232,6 @@ export function App({ token, authRequired }: AppProps) {
         </div>
       </aside>
 
-      {/* ── Map ── */}
       <div className="map-area">
         <MapPanel
           routeGeoJson={routeGeoJson}
@@ -249,7 +241,6 @@ export function App({ token, authRequired }: AppProps) {
         />
       </div>
 
-      {/* ── Lead detail drawer ── */}
       {selectedLead && (
         <LeadDetail
           lead={selectedLead}
@@ -263,7 +254,6 @@ export function App({ token, authRequired }: AppProps) {
 
   return (
     <div className="app-shell">
-      {/* Top nav */}
       <header className="topbar">
         <div className="topbar-brand">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -271,40 +261,28 @@ export function App({ token, authRequired }: AppProps) {
           </svg>
           Re<span>route</span>
         </div>
-
-        {authRequired ? (
-          <SignedIn>
-            <UserButton />
-          </SignedIn>
-        ) : (
-          <span className="topbar-meta">POC mode</span>
-        )}
+        <SignedIn>
+          <UserButton />
+        </SignedIn>
       </header>
 
-      {/* Body */}
-      {authRequired ? (
-        <>
-          <SignedOut>
-            <div className="signin-screen">
-              <div className="signin-card">
-                <div className="signin-icon">
-                  <IconLock />
-                </div>
-                <p className="signin-title">Welcome to Reproute</p>
-                <p className="signin-subtitle">Sign in to start discovering prospects along your route.</p>
-                <SignInButton>
-                  <button className="btn btn-primary" style={{ marginTop: "0.25rem" }}>
-                    Sign in
-                  </button>
-                </SignInButton>
-              </div>
+      <SignedOut>
+        <div className="signin-screen">
+          <div className="signin-card">
+            <div className="signin-icon">
+              <IconLock />
             </div>
-          </SignedOut>
-          <SignedIn>{appContent}</SignedIn>
-        </>
-      ) : (
-        appContent
-      )}
+            <p className="signin-title">Welcome to Reproute</p>
+            <p className="signin-subtitle">Sign in to start discovering prospects along your route.</p>
+            <SignInButton>
+              <button className="btn btn-primary" style={{ marginTop: "0.25rem" }}>
+                Sign in
+              </button>
+            </SignInButton>
+          </div>
+        </div>
+      </SignedOut>
+      <SignedIn>{appContent}</SignedIn>
     </div>
   );
 }
