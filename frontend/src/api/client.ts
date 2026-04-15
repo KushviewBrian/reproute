@@ -102,21 +102,12 @@ export async function fetchLeads(
   );
 }
 
-export async function geocode(query: string) {
-  const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=6`;
-  const resp = await fetch(url);
-  if (!resp.ok) throw new Error(`Geocode failed: ${resp.status}`);
-  const payload = await resp.json();
-  const features: unknown[] = Array.isArray(payload?.features) ? payload.features : [];
-  const results = (features as any[]).flatMap((f) => {
-    const coords = f?.geometry?.coordinates;
-    if (!coords?.[0] || !coords?.[1]) return [];
-    const p = f?.properties ?? {};
-    const parts = [p.name, p.street, p.city ?? p.town ?? p.village, p.state].filter(Boolean);
-    const label = parts.join(", ") || query;
-    return [{ label, lat: coords[1] as number, lng: coords[0] as number }];
-  });
-  return { results, degraded: false };
+export async function geocode(query: string, token?: string) {
+  return req<{ results: { label: string; lat: number; lng: number }[]; degraded: boolean }>(
+    `/geocode?q=${encodeURIComponent(query)}`,
+    {},
+    token,
+  );
 }
 
 export async function listSavedLeads(token?: string, status?: string) {

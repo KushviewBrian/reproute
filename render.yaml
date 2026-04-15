@@ -10,12 +10,16 @@ services:
         sync: false
       - key: REDIS_URL
         sync: false
+      - key: CLERK_JWT_ISSUER
+        sync: false
+      - key: CLERK_JWKS_URL
+        sync: false
       - key: SECRET_KEY
         generateValue: true
       - key: ENVIRONMENT
         value: production
       - key: POC_MODE
-        value: "true"
+        value: "false"
       - key: CORS_ALLOW_ORIGINS
         value: https://reproute-8vhf.onrender.com
       - key: GEOCODE_WORKER_URL

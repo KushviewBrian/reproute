@@ -26,14 +26,13 @@ function IconSearch() {
   );
 }
 
-async function resolveAddress(text: string): Promise<ResolvedLocation> {
+async function resolveAddress(text: string, token?: string): Promise<ResolvedLocation> {
   const trimmed = text.trim();
-  // Accept bare "lat, lng" entry
   const coordMatch = trimmed.match(/^(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)$/);
   if (coordMatch) {
     return { label: trimmed, lat: parseFloat(coordMatch[1]), lng: parseFloat(coordMatch[2]) };
   }
-  const data = await geocode(trimmed);
+  const data = await geocode(trimmed, token);
   if (!data.results.length) throw new Error(`No results for "${trimmed}"`);
   return data.results[0];
 }
@@ -70,12 +69,12 @@ export function RouteForm({ token, onCreated }: Props) {
       let originLoc: ResolvedLocation;
       let destLoc: ResolvedLocation;
       try {
-        originLoc = await resolveAddress(originText);
+        originLoc = await resolveAddress(originText, token);
       } catch {
         throw new Error(`Origin: no results for "${originText}"`);
       }
       try {
-        destLoc = await resolveAddress(destText);
+        destLoc = await resolveAddress(destText, token);
       } catch {
         throw new Error(`Destination: no results for "${destText}"`);
       }
