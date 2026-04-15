@@ -13,18 +13,20 @@ router = APIRouter()
 @router.get("/health")
 async def health(db: AsyncSession = Depends(get_db)) -> dict:
     db_ok = True
+    db_err = None
     redis_ok = True
     try:
         await db.execute(text("SELECT 1"))
-    except Exception:
+    except Exception as e:
         db_ok = False
+        db_err = str(e)
     try:
         await redis_client.ping()
     except Exception:
         redis_ok = False
 
     status = "ok" if (db_ok and redis_ok) else "degraded"
-    return {"status": status, "db": "ok" if db_ok else "down", "redis": "ok" if redis_ok else "down"}
+    return {"status": status, "db": "ok" if db_ok else f"down: {db_err}", "redis": "ok" if redis_ok else "down"}
 
 
 @router.get("/debug")
