@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     clerk_audience: str = ""
     clerk_authorized_party: str = ""
 
-    geocode_worker_url: str = "https://example.workers.dev/geocode"
+    geocode_worker_url: str = "https://photon.komoot.io/api/"
     geocode_timeout_seconds: int = 4
 
     ors_api_key: str = ""

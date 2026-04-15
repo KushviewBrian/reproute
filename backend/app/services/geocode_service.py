@@ -50,7 +50,13 @@ async def geocode(query: str | None = None, lat: float | None = None, lng: float
         coords = geom.get("coordinates", [None, None])
         if coords[0] is None or coords[1] is None:
             continue
-        label = props.get("name") or props.get("label") or query or f"{lat},{lng}"
+        parts = [
+            props.get("name") or props.get("label"),
+            props.get("street"),
+            props.get("city") or props.get("town") or props.get("village"),
+            props.get("state"),
+        ]
+        label = ", ".join(p for p in parts if p) or query or f"{lat},{lng}"
         bbox = feature.get("bbox")
         results.append(GeocodeResult(label=label, lat=float(coords[1]), lng=float(coords[0]), bbox=bbox))
 
