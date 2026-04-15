@@ -41,6 +41,20 @@ async def root():
     return {"status": "ok", "service": "reproute-api"}
 
 
+@app.get("/dbcheck")
+async def dbcheck():
+    from sqlalchemy import text
+    from app.db.session import get_db
+    from app.core.config import get_settings
+    s = get_settings()
+    try:
+        async for db in get_db():
+            await db.execute(text("SELECT 1"))
+            return {"db": "ok", "ssl": "require" in str(s.database_url) or True}
+    except Exception as e:
+        return {"db": "down", "error": str(e), "url_prefix": s.database_url[:60]}
+
+
 @app.head("/")
 async def root_head():
     return Response(status_code=200)
