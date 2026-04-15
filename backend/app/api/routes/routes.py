@@ -1,8 +1,7 @@
-import json
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user
@@ -43,48 +42,28 @@ async def create_route(
     distance = int(properties.get("distance", 0))
     duration = int(properties.get("duration", 0))
 
-    wkt = linestring_wkt_from_geojson(geometry)
-
-    insert_sql = text(
-        """
-        INSERT INTO route (
-          user_id, origin_label, destination_label, origin_lat, origin_lng,
-          destination_lat, destination_lng, route_geom, route_distance_meters,
-          route_duration_seconds, corridor_width_meters, ors_response_json
-        )
-        VALUES (
-          :user_id, :origin_label, :destination_label, :origin_lat, :origin_lng,
-          :destination_lat, :destination_lng, ST_GeogFromText(:wkt), :distance,
-          :duration, :corridor, CAST(:ors_json AS jsonb)
-        )
-        RETURNING id
-        """
+    route = Route(
+        user_id=user.id,
+        origin_label=payload.origin_label,
+        destination_label=payload.destination_label,
+        origin_lat=payload.origin_lat,
+        origin_lng=payload.origin_lng,
+        destination_lat=payload.destination_lat,
+        destination_lng=payload.destination_lng,
+        route_geom=linestring_wkt_from_geojson(geometry),
+        route_distance_meters=distance,
+        route_duration_seconds=duration,
+        corridor_width_meters=payload.corridor_width_meters,
+        ors_response_json=route_response,
     )
-
-    inserted = await db.execute(
-        insert_sql,
-        {
-            "user_id": str(user.id),
-            "origin_label": payload.origin_label,
-            "destination_label": payload.destination_label,
-            "origin_lat": payload.origin_lat,
-            "origin_lng": payload.origin_lng,
-            "destination_lat": payload.destination_lat,
-            "destination_lng": payload.destination_lng,
-            "wkt": wkt,
-            "distance": distance,
-            "duration": duration,
-            "corridor": payload.corridor_width_meters,
-            "ors_json": json.dumps(route_response),
-        },
-    )
-    route_id = inserted.scalar_one()
+    db.add(route)
     await db.commit()
+    await db.refresh(route)
 
-    lead_count = await refresh_route_candidates_and_scores(db, route_id, payload.corridor_width_meters)
+    lead_count = await refresh_route_candidates_and_scores(db, route.id, payload.corridor_width_meters)
 
     return CreateRouteResponse(
-        route_id=route_id,
+        route_id=route.id,
         route_distance_meters=distance,
         route_duration_seconds=duration,
         lead_count=lead_count,

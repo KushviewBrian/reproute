@@ -3,13 +3,50 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import uuid
 from datetime import datetime, timezone
 
 import duckdb
+from shapely import wkb
 from sqlalchemy import create_engine, text
 
 from backend.app.services.classification_service import classify
+
+
+def _json_default(value):
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return None
+    if hasattr(value, "tolist"):
+        return value.tolist()
+    return str(value)
+
+
+def _json_clean(value):
+    if isinstance(value, float) and math.isnan(value):
+        return None
+    if isinstance(value, dict):
+        return {k: _json_clean(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_json_clean(v) for v in value]
+    if hasattr(value, "tolist"):
+        return _json_clean(value.tolist())
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return None
+    return value
+
+
+def _to_list(value) -> list:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    if hasattr(value, "tolist"):
+        converted = value.tolist()
+        if isinstance(converted, list):
+            return converted
+        return [converted]
+    return [value]
 
 
 def parse_args() -> argparse.Namespace:
@@ -27,21 +64,29 @@ def normalize_row(row: dict) -> dict | None:
         return None
 
     geometry = row.get("geometry")
-    if not geometry:
-        return None
-
-    coords = geometry.get("coordinates") if isinstance(geometry, dict) else None
-    if not coords or len(coords) < 2:
+    lng = None
+    lat = None
+    if isinstance(geometry, dict):
+        coords = geometry.get("coordinates")
+        if coords and len(coords) >= 2:
+            lng = float(coords[0])
+            lat = float(coords[1])
+    elif isinstance(geometry, (bytes, bytearray, memoryview)):
+        point = wkb.loads(bytes(geometry))
+        if getattr(point, "geom_type", None) == "Point":
+            lng = float(point.x)
+            lat = float(point.y)
+    if lng is None or lat is None:
         return None
 
     operating_status = row.get("operating_status")
     if operating_status == "permanently_closed":
         return None
 
-    addresses = row.get("addresses") or []
+    addresses = _to_list(row.get("addresses"))
     addr0 = addresses[0] if addresses else {}
-    phones = row.get("phones") or []
-    websites = row.get("websites") or []
+    phones = _to_list(row.get("phones"))
+    websites = _to_list(row.get("websites"))
     taxonomy = row.get("taxonomy") or {}
     hierarchy = taxonomy.get("hierarchy") if isinstance(taxonomy, dict) else None
 
@@ -67,12 +112,12 @@ def normalize_row(row: dict) -> dict | None:
         "website": websites[0] if websites else None,
         "operating_status": operating_status,
         "confidence_score": row.get("confidence"),
-        "lng": float(coords[0]),
-        "lat": float(coords[1]),
+        "lng": lng,
+        "lat": lat,
         "has_phone": bool(phones),
         "has_website": bool(websites),
         "has_address": bool(addr0),
-        "source_payload_json": json.dumps(row),
+        "source_payload_json": json.dumps(_json_clean(row), default=_json_default, allow_nan=False),
         "last_seen_at": datetime.now(timezone.utc).isoformat(),
     }
 

@@ -2,9 +2,11 @@ export const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8
 
 async function req<T>(path: string, options: RequestInit = {}, token?: string): Promise<T> {
   const headers: Record<string, string> = {
-    "Content-Type": "application/json",
     ...(options.headers as Record<string, string> | undefined),
   };
+  if (options.body && !headers["Content-Type"]) {
+    headers["Content-Type"] = "application/json";
+  }
   if (token) headers.Authorization = `Bearer ${token}`;
 
   const resp = await fetch(`${API_BASE}${path}`, { ...options, headers });

@@ -1,0 +1,26 @@
+name = "reproute-geocode"
+main = "geocode-worker.js"
+compatibility_date = "2024-01-01"
+
+# KV namespace for geocoding cache
+kv_namespaces = [
+  { binding = "GEOCODE_CACHE", id = "b3606269e2e840bba0b823dd3a6ec699", preview_id = "b3606269e2e840bba0b823dd3a6ec699" }
+]
+
+# Environment variables
+[vars]
+PHOTON_BASE_URL = "https://photon.komoot.io/api"
+
+# Production environment
+[env.production]
+name = "reproute-geocode-prod"
+kv_namespaces = [
+  { binding = "GEOCODE_CACHE", id = "b3606269e2e840bba0b823dd3a6ec699", preview_id = "b3606269e2e840bba0b823dd3a6ec699" }
+]
+
+# Staging environment
+[env.staging]
+name = "reproute-geocode-staging"
+kv_namespaces = [
+  { binding = "GEOCODE_CACHE", id = "b3606269e2e840bba0b823dd3a6ec699", preview_id = "b3606269e2e840bba0b823dd3a6ec699" }
+]

@@ -6,6 +6,19 @@ from app.core.config import get_settings
 from app.schemas.geocode import GeocodeResult
 
 
+def _poc_fallback(query: str) -> list[GeocodeResult]:
+    q = query.lower()
+    known = {
+        "indianapolis": (39.7683331, -86.1583502),
+        "chicago": (41.8755616, -87.6244212),
+        "detroit": (42.3315509, -83.0466403),
+    }
+    for name, (lat, lng) in known.items():
+        if name in q:
+            return [GeocodeResult(label=name.title(), lat=lat, lng=lng, bbox=None)]
+    return [GeocodeResult(label=query, lat=39.7683331, lng=-86.1583502, bbox=None)]
+
+
 async def geocode(query: str | None = None, lat: float | None = None, lng: float | None = None) -> tuple[list[GeocodeResult], bool]:
     settings = get_settings()
     if query is None and (lat is None or lng is None):
@@ -25,6 +38,8 @@ async def geocode(query: str | None = None, lat: float | None = None, lng: float
             resp.raise_for_status()
             payload = resp.json()
     except Exception:
+        if settings.poc_mode and query is not None:
+            return _poc_fallback(query), True
         return [], True
 
     features = payload.get("features", []) if isinstance(payload, dict) else []

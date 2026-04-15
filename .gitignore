@@ -22,9 +22,10 @@ dist/
 # Logs
 *.log
 
-# Alembic
-backend/alembic.ini
-
 # IDE
 .vscode/
 .idea/
+
+# Render setup files with secrets
+RENDER_ENV_VARS.txt
+RENDER_SETUP.txt

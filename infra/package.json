@@ -1,0 +1,16 @@
+{
+  "name": "reproute-infra",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Infrastructure deployment for ReRoute",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "deploy:staging": "wrangler deploy --env staging",
+    "deploy:production": "wrangler deploy --env production",
+    "dev": "wrangler dev",
+    "tail": "wrangler tail"
+  },
+  "devDependencies": {
+    "wrangler": "^3.78.0"
+  }
+}

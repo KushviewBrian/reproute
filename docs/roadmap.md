@@ -32,7 +32,7 @@ Phases are sequential. Do not start Phase N+1 until Phase N's definition of done
 | Auth | Clerk (50K MRU free) | JWT validated in FastAPI middleware |
 | Redis | Upstash free tier | Rate limiting + route cache |
 | CI/CD | GitHub Actions | Build → test → deploy on push to main |
-| Hosting (backend) | Fly.io (~$2–5/mo) | Docker container, env vars only |
+| Hosting (backend) | Render free/paid | Docker container, env vars only |
 | Hosting (frontend) | Cloudflare Pages | Unlimited static asset requests |
 | Place data | Overture Maps Places | Monthly bulk GeoParquet, ingested to PostGIS |
 
@@ -133,9 +133,9 @@ Phases are sequential. Do not start Phase N+1 until Phase N's definition of done
   1. Run Python tests (`pytest`)
   2. Run frontend build (`npm run build`)
   3. Build Docker image, push to `ghcr.io`
-  4. Deploy backend to Fly.io (`flyctl deploy --image ghcr.io/...`)
+  4. Deploy backend to Render (trigger deploy or Render API)
   5. Deploy frontend to Cloudflare Pages (`wrangler pages deploy ./dist`)
-- [ ] Store secrets in GitHub Actions secrets: `FLY_API_TOKEN`, `CLOUDFLARE_API_TOKEN`, `CLERK_SECRET_KEY`, `DATABASE_URL`, etc.
+- [ ] Store secrets in GitHub Actions secrets: `RENDER_API_KEY`, `RENDER_SERVICE_ID`, `CLOUDFLARE_API_TOKEN`, `CLERK_SECRET_KEY`, `DATABASE_URL`, etc.
 - [ ] First pipeline run completes green end-to-end
 
 ### 0.8 Overture data validation
@@ -947,7 +947,7 @@ Week 5–6 budget includes buffer for integration issues, data quality work, and
 
 | Stage | Monthly cost | Notes |
 |---|---|---|
-| Phases 0–4 (dev + free stack) | ~$2–5/mo | Fly.io PAYG only; everything else free |
+| Phases 0–4 (dev + free stack) | $0–25/mo | Render free can be $0; paid tier may be needed for always-on prod |
 | Phase 5–7 (pilot + launch, no triggers hit) | ~$2–5/mo | Stay on free stack; contingency upgrades not needed |
 | Phase 5–7 (if all contingency triggers hit) | ~$35–45/mo | Supabase Pro + Hetzner VPS |
 | Post-launch growth | ~$55–110/mo | Full production stack at real user scale |

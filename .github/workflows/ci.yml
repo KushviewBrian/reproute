@@ -44,5 +44,5 @@ jobs:
       - uses: actions/checkout@v4
       - name: Deploy placeholders
         run: |
-          echo "Add flyctl + wrangler deploy once secrets are configured."
+          echo "Add Render deploy + wrangler deploy once secrets are configured."
           echo "See docs/REQUIRED_SECRETS.md"

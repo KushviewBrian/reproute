@@ -63,11 +63,23 @@ async def get_current_user(
     authorization: str | None = Header(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> User:
+    settings = get_settings()
+
+    if settings.poc_mode:
+        result = await db.execute(select(User).where(User.email == settings.poc_user_email))
+        existing = result.scalar_one_or_none()
+        if existing:
+            return existing
+        user = User(email=settings.poc_user_email, full_name="POC User")
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+        return user
+
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token")
 
     token = authorization.split(" ", 1)[1]
-    settings = get_settings()
 
     try:
         if settings.clerk_jwks_url:

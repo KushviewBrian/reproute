@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     route_cache_ttl_seconds: int = 86400
 
     cors_allow_origins: str = "http://localhost:5173"
+    poc_mode: bool = False
+    poc_user_email: str = "poc@local.dev"
 
 
 @lru_cache

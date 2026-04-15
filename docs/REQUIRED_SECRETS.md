@@ -4,7 +4,8 @@ Populate these while implementation continues.
 
 ## GitHub Actions secrets
 
-- `FLY_API_TOKEN`
+- `RENDER_API_KEY`
+- `RENDER_SERVICE_ID`
 - `CLOUDFLARE_API_TOKEN`
 - `CLOUDFLARE_ACCOUNT_ID`
 - `CLOUDFLARE_KV_NAMESPACE_ID`
