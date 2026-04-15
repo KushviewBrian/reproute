@@ -15,7 +15,11 @@ def _get_engine():
         from app.core.config import get_settings
         settings = get_settings()
         # statement_cache_size=0 required for Supabase pgbouncer pooler
-        connect_args = {"timeout": 10, "command_timeout": 10, "ssl": True, "statement_cache_size": 0}
+        import ssl
+        ssl_ctx = ssl.create_default_context()
+        ssl_ctx.check_hostname = False
+        ssl_ctx.verify_mode = ssl.CERT_NONE
+        connect_args = {"timeout": 10, "command_timeout": 10, "ssl": ssl_ctx, "statement_cache_size": 0}
         _engine = create_async_engine(
             settings.database_url,
             echo=False,
