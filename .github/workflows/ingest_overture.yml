@@ -20,7 +20,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install script dependencies
-        run: pip install overturemaps duckdb==1.4.1 "sqlalchemy==2.0.43" "psycopg[binary]==3.2.10" shapely
+        run: pip install overturemaps duckdb==1.4.1 "sqlalchemy==2.0.43" "psycopg[binary]==3.2.10" shapely pandas
 
       - name: Download Overture places
         run: |
