@@ -10,10 +10,17 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Reproute API", version="0.1.0")
 
+# CORS configuration - specific origins required for credentials
+cors_origins = [
+    "https://reproute-8vhf.onrender.com",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
+    allow_origins=cors_origins,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -28,7 +35,7 @@ async def startup():
     logger.info("database_url=%s", s.database_url[:40] + "..." if len(s.database_url) > 40 else s.database_url)
     logger.info("redis_url=%s", s.redis_url[:40] + "..." if len(s.redis_url) > 40 else s.redis_url)
     logger.info("geocode_worker_url=%s", s.geocode_worker_url)
-    logger.info("cors=wildcard")
+    logger.info("cors_origins=%s", cors_origins)
     logger.info("=== startup complete ===")
 
 
