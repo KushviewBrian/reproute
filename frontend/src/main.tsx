@@ -22,7 +22,7 @@ function ClerkApp() {
     let cancelled = false;
 
     async function refresh() {
-      const t = await getToken();
+      const t = await getToken({ template: "reproute" });
       if (!cancelled) setToken(t ?? undefined);
     }
 
