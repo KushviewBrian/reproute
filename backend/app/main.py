@@ -22,3 +22,4 @@ async def root():
     return {"status": "ok", "service": "reproute-api"}
 
 app.include_router(api_router)
+# CORS fix for Render deployment Tue Apr 14 23:38:58 EDT 2026
