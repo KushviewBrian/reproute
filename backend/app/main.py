@@ -8,9 +8,16 @@ settings = get_settings()
 
 app = FastAPI(title="Reproute API", version="0.1.0")
 
+# Hardcoded CORS origins - bypassing env var issues
+cors_origins = [
+    "https://reproute-8vhf.onrender.com",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[o.strip() for o in settings.cors_allow_origins.split(",") if o.strip()],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -22,4 +29,3 @@ async def root():
     return {"status": "ok", "service": "reproute-api"}
 
 app.include_router(api_router)
-# CORS fix for Render deployment Tue Apr 14 23:38:58 EDT 2026
