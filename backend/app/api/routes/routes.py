@@ -13,8 +13,6 @@ from app.schemas.route import CreateRouteRequest, CreateRouteResponse, PatchRout
 from app.services.lead_service import refresh_route_candidates_and_scores
 from app.services.routing_service import get_route
 from app.utils.geo import linestring_wkt_from_geojson
-from app.utils.rate_limit import enforce_rate_limit
-
 router = APIRouter()
 
 
@@ -24,7 +22,6 @@ async def create_route(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> CreateRouteResponse:
-    await enforce_rate_limit(f"rl:routes:{user.id}", limit=60, window_seconds=3600)
 
     route_response = await get_route(
         origin_lat=payload.origin_lat,

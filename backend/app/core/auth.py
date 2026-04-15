@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import lru_cache
 
@@ -15,11 +14,8 @@ from app.core.config import get_settings
 from app.db.session import get_db
 from app.models.user import User
 
-
-@dataclass
-class AuthUser:
-    id: str
-    email: str
+# In-memory cache: email -> User (avoids a DB round-trip on every request)
+_user_cache: dict[str, User] = {}
 
 
 @lru_cache
@@ -65,17 +61,6 @@ async def get_current_user(
 ) -> User:
     settings = get_settings()
 
-    if settings.poc_mode:
-        result = await db.execute(select(User).where(User.email == settings.poc_user_email))
-        existing = result.scalar_one_or_none()
-        if existing:
-            return existing
-        user = User(email=settings.poc_user_email, full_name="POC User")
-        db.add(user)
-        await db.commit()
-        await db.refresh(user)
-        return user
-
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token")
 
@@ -93,37 +78,28 @@ async def get_current_user(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token issuer")
 
     exp = claims.get("exp")
-    if exp is not None:
-        now = datetime.now(timezone.utc).timestamp()
-        if float(exp) < now:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token expired")
-
-    if settings.clerk_audience:
-        aud = claims.get("aud")
-        if isinstance(aud, list):
-            if settings.clerk_audience not in aud:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token audience")
-        elif aud != settings.clerk_audience:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token audience")
-
-    if settings.clerk_authorized_party:
-        azp = claims.get("azp")
-        if azp != settings.clerk_authorized_party:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token party")
+    if exp is not None and float(exp) < datetime.now(timezone.utc).timestamp():
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token expired")
 
     email = claims.get("email") or claims.get("primary_email_address")
     if not email:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token missing email")
+
+    # Return cached user if we've seen this email before
+    if email in _user_cache:
+        return _user_cache[email]
 
     full_name = (claims.get("name") or "").strip() or None
 
     result = await db.execute(select(User).where(User.email == email))
     existing = result.scalar_one_or_none()
     if existing:
+        _user_cache[email] = existing
         return existing
 
     user = User(email=email, full_name=full_name)
     db.add(user)
     await db.commit()
     await db.refresh(user)
+    _user_cache[email] = user
     return user
