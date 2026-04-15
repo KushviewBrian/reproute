@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import logging
+
 import httpx
 
 from app.core.config import get_settings
 from app.schemas.geocode import GeocodeResult
+
+logger = logging.getLogger(__name__)
 
 
 def _poc_fallback(query: str) -> list[GeocodeResult]:
@@ -19,26 +23,33 @@ def _poc_fallback(query: str) -> list[GeocodeResult]:
     return [GeocodeResult(label=query, lat=39.7683331, lng=-86.1583502, bbox=None)]
 
 
-async def geocode(query: str | None = None, lat: float | None = None, lng: float | None = None) -> tuple[list[GeocodeResult], bool]:
+async def geocode(
+    query: str | None = None,
+    lat: float | None = None,
+    lng: float | None = None,
+) -> tuple[list[GeocodeResult], bool]:
     settings = get_settings()
+
     if query is None and (lat is None or lng is None):
         return [], False
     if query is not None and not query.strip():
         return [], False
 
+    params: dict = {"limit": 6}
     if query is not None:
-        params = {"q": query, "limit": 5}
+        params["q"] = query
     else:
-        params = {"lat": lat, "lon": lng}
+        params["lat"] = lat
+        params["lon"] = lng
 
-    degraded = False
     try:
         async with httpx.AsyncClient(timeout=settings.geocode_timeout_seconds) as client:
             resp = await client.get(settings.geocode_worker_url, params=params)
             resp.raise_for_status()
             payload = resp.json()
-    except Exception:
-        if settings.poc_mode and query is not None:
+    except Exception as exc:
+        logger.error("Geocode request failed url=%s error=%r", settings.geocode_worker_url, exc)
+        if query is not None:
             return _poc_fallback(query), True
         return [], True
 
@@ -60,4 +71,5 @@ async def geocode(query: str | None = None, lat: float | None = None, lng: float
         bbox = feature.get("bbox")
         results.append(GeocodeResult(label=label, lat=float(coords[1]), lng=float(coords[0]), bbox=bbox))
 
-    return results, degraded
+    logger.info("Geocode query=%r returned %d results degraded=False", query, len(results))
+    return results, False
