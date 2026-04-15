@@ -68,16 +68,8 @@ export function RouteForm({ token, onCreated }: Props) {
     try {
       let originLoc: ResolvedLocation;
       let destLoc: ResolvedLocation;
-      try {
-        originLoc = await resolveAddress(originText, token);
-      } catch {
-        throw new Error(`Origin: no results for "${originText}"`);
-      }
-      try {
-        destLoc = await resolveAddress(destText, token);
-      } catch {
-        throw new Error(`Destination: no results for "${destText}"`);
-      }
+      originLoc = await resolveAddress(originText, token);
+      destLoc = await resolveAddress(destText, token);
 
       const created = await createRoute(
         {
