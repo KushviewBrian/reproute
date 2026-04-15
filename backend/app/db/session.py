@@ -14,12 +14,14 @@ def _get_engine():
     if _engine is None:
         from app.core.config import get_settings
         settings = get_settings()
+        connect_args = {"timeout": 10, "command_timeout": 10}
         _engine = create_async_engine(
             settings.database_url,
             echo=False,
             pool_pre_ping=True,
             pool_size=2,
             max_overflow=2,
+            connect_args=connect_args,
         )
         _SessionLocal = async_sessionmaker(
             bind=_engine, class_=AsyncSession, expire_on_commit=False

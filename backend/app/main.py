@@ -4,18 +4,16 @@ from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.router import api_router
+from app.core.config import get_settings
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Reproute API", version="0.1.0")
 
-# CORS configuration - specific origins required for credentials
-cors_origins = [
-    "https://reproute-8vhf.onrender.com",
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-]
+# CORS configuration - origins read from config/env var CORS_ALLOW_ORIGINS (comma-separated)
+_settings = get_settings()
+cors_origins = [o.strip() for o in _settings.cors_allow_origins.split(",") if o.strip()]
 
 app.add_middleware(
     CORSMiddleware,
@@ -29,7 +27,6 @@ app.add_middleware(
 @app.on_event("startup")
 async def startup():
     logger.info("=== Reproute API starting up ===")
-    from app.core.config import get_settings
     s = get_settings()
     logger.info("environment=%s poc_mode=%s", s.environment, s.poc_mode)
     logger.info("database_url=%s", s.database_url[:40] + "..." if len(s.database_url) > 40 else s.database_url)
