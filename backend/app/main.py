@@ -16,4 +16,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.get("/")
+async def root():
+    """Root endpoint for Render health checks"""
+    return {"status": "ok", "service": "reproute-api"}
+
 app.include_router(api_router)
