@@ -29,7 +29,7 @@ export function AddressAutocomplete({ id, label, placeholder, token, disabled, i
   const [open, setOpen] = useState(false);
   const [resolved, setResolved] = useState(!!initialLabel);
   const [activeIndex, setActiveIndex] = useState(-1);
-  const [fetchError, setFetchError] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -54,7 +54,7 @@ export function AddressAutocomplete({ id, label, placeholder, token, disabled, i
     // Only propagate clear when the field is actually empty
     if (raw.trim() === "") {
       onClear();
-      setFetchError(false);
+      setFetchError(null);
     }
 
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -67,14 +67,15 @@ export function AddressAutocomplete({ id, label, placeholder, token, disabled, i
 
     debounceRef.current = setTimeout(async () => {
       setLoading(true);
-      setFetchError(false);
+      setFetchError(null);
       try {
         const data = await geocode(raw, token);
         setResults(data.results.slice(0, 6));
         setOpen(data.results.length > 0);
       } catch (err) {
-        console.error("Geocode error:", err);
-        setFetchError(true);
+        const msg = err instanceof Error ? err.message : String(err);
+        const is401 = msg.includes("401");
+        setFetchError(is401 ? "Not signed in — please refresh the page" : "Search unavailable");
         setResults([]);
         setOpen(false);
       } finally {
@@ -167,7 +168,7 @@ export function AddressAutocomplete({ id, label, placeholder, token, disabled, i
       </div>
 
       {fetchError && (
-        <p className="autocomplete-fetch-error">Search unavailable — check API connection</p>
+        <p className="autocomplete-fetch-error">{fetchError}</p>
       )}
 
       {open && results.length > 0 && (

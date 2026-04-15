@@ -11,12 +11,32 @@ const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY || "";
 const pocMode = import.meta.env.VITE_POC_MODE === "true";
 
 function ClerkApp() {
-  const { getToken } = useAuth();
+  const { getToken, isSignedIn, isLoaded } = useAuth();
   const [token, setToken] = React.useState<string | undefined>(undefined);
 
+  // Refresh the token whenever sign-in state changes, and keep it fresh
+  // by refreshing every 4 minutes (Clerk tokens expire after 60 min but
+  // this keeps us well ahead of expiry in long sessions).
   React.useEffect(() => {
-    getToken().then((t) => setToken(t ?? undefined));
-  }, [getToken]);
+    if (!isLoaded || !isSignedIn) {
+      setToken(undefined);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function refresh() {
+      const t = await getToken();
+      if (!cancelled) setToken(t ?? undefined);
+    }
+
+    refresh();
+    const interval = setInterval(refresh, 4 * 60 * 1000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [getToken, isLoaded, isSignedIn]);
 
   return (
     <BrowserRouter>
