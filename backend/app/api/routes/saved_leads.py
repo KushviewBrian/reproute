@@ -2,6 +2,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user
@@ -20,9 +21,44 @@ async def create_saved_lead(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> SavedLeadItem:
+    # Idempotent behavior: if already saved for this user/business, return the existing record.
+    existing = (
+        await db.execute(
+            select(SavedLead).where(
+                SavedLead.user_id == user.id,
+                SavedLead.business_id == payload.business_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if existing:
+        return SavedLeadItem(
+            id=existing.id,
+            user_id=existing.user_id,
+            route_id=existing.route_id,
+            business_id=existing.business_id,
+            status=existing.status,
+            priority=existing.priority,
+        )
+
     item = SavedLead(user_id=user.id, business_id=payload.business_id, route_id=payload.route_id)
     db.add(item)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        # Handles race conditions where another request saved it first.
+        existing = (
+            await db.execute(
+                select(SavedLead).where(
+                    SavedLead.user_id == user.id,
+                    SavedLead.business_id == payload.business_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if not existing:
+            raise
+        item = existing
+
     return SavedLeadItem(
         id=item.id,
         user_id=item.user_id,

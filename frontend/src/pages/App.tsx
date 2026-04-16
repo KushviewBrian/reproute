@@ -134,8 +134,10 @@ export function App({ token }: AppProps) {
   }
 
   async function onSaveLeadWithNote(lead: Lead, noteText: string) {
+    let savedOk = false;
     try {
       await saveLead({ business_id: lead.business_id, route_id: routeId ?? undefined }, token);
+      savedOk = true;
       await createNote(
         {
           business_id: lead.business_id,
@@ -144,8 +146,13 @@ export function App({ token }: AppProps) {
         },
         token,
       );
+      setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save lead with note");
+      if (savedOk) {
+        setError(err instanceof Error ? `Lead saved, but note failed: ${err.message}` : "Lead saved, but note failed");
+      } else {
+        setError(err instanceof Error ? `Failed to save lead: ${err.message}` : "Failed to save lead");
+      }
     }
   }
 
