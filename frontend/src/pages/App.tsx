@@ -64,30 +64,53 @@ export function App({ token }: AppProps) {
   const [minScore, setMinScore] = useState(40);
   const [hasPhone, setHasPhone] = useState<boolean | undefined>(undefined);
   const [hasWebsite, setHasWebsite] = useState<boolean | undefined>(undefined);
+  const [insuranceClass, setInsuranceClass] = useState<string>("");
+  const [sortBy, setSortBy] = useState<"score" | "business_type">("score");
   const [corridor, setCorridor] = useState(1609);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [waypoints, setWaypoints] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [cacheMeta, setCacheMeta] = useState<string | null>(null);
 
+  function sortLeads(input: Lead[], mode: "score" | "business_type"): Lead[] {
+    const next = [...input];
+    if (mode === "business_type") {
+      next.sort((a, b) => {
+        const classCmp = (a.insurance_class ?? "ZZZ").localeCompare(b.insurance_class ?? "ZZZ");
+        if (classCmp !== 0) return classCmp;
+        return b.final_score - a.final_score;
+      });
+      return next;
+    }
+    next.sort((a, b) => b.final_score - a.final_score);
+    return next;
+  }
+
   const loadLeads = useCallback(
     async (id: string) => {
       try {
-        const data = await fetchLeads(id, token, { minScore, hasPhone, hasWebsite, limit: 100 });
-        setLeads(data.leads);
-        cacheRouteLeads(id, data.leads);
+        const data = await fetchLeads(id, token, {
+          minScore,
+          hasPhone,
+          hasWebsite,
+          insuranceClass: insuranceClass ? [insuranceClass] : undefined,
+          limit: 100,
+        });
+        const sorted = sortLeads(data.leads, sortBy);
+        setLeads(sorted);
+        cacheRouteLeads(id, sorted);
         setCacheMeta(null);
       } catch (err) {
         const cached = readCachedRouteLeads(id);
         if (cached) {
-          setLeads(cached.leads);
+          setLeads(sortLeads(cached.leads, sortBy));
           setCacheMeta(`Cached ${new Date(cached.updatedAt).toLocaleString()}`);
           return;
         }
         throw err;
       }
     },
-    [token, minScore, hasPhone, hasWebsite],
+    [token, minScore, hasPhone, hasWebsite, insuranceClass, sortBy],
   );
 
   async function onCreated(created: { routeId: string; routeGeoJson: GeoJSON.LineString }) {
@@ -212,6 +235,40 @@ export function App({ token }: AppProps) {
                       Website
                     </button>
                   </div>
+                </div>
+
+                <div className="filter-row">
+                  <span className="filter-label">Business type</span>
+                  <select
+                    className="form-select"
+                    style={{ width: "auto", fontSize: "0.75rem" }}
+                    value={insuranceClass}
+                    onChange={(e) => setInsuranceClass(e.target.value)}
+                  >
+                    <option value="">All</option>
+                    <option value="Auto Service">Auto Service</option>
+                    <option value="Contractor / Trades">Contractor / Trades</option>
+                    <option value="Retail">Retail</option>
+                    <option value="Food & Beverage">Food & Beverage</option>
+                    <option value="Personal Services">Personal Services</option>
+                    <option value="Medical / Clinic">Medical / Clinic</option>
+                    <option value="Professional / Office">Professional / Office</option>
+                    <option value="Light Industrial">Light Industrial</option>
+                    <option value="Other Commercial">Other Commercial</option>
+                  </select>
+                </div>
+
+                <div className="filter-row">
+                  <span className="filter-label">Sort</span>
+                  <select
+                    className="form-select"
+                    style={{ width: "auto", fontSize: "0.75rem" }}
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value as "score" | "business_type")}
+                  >
+                    <option value="score">Top score</option>
+                    <option value="business_type">Business type</option>
+                  </select>
                 </div>
 
                 <button className="btn btn-ghost btn-sm" style={{ alignSelf: "flex-end" }} onClick={onApplyFilters}>
