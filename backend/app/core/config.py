@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     ors_api_key: str = ""
     ors_base_url: str = "https://api.openrouteservice.org"
     route_cache_ttl_seconds: int = 86400
+    ingest_database_url: str = ""
+    admin_import_secret: str = ""
 
     cors_allow_origins: str = "http://localhost:5173"
     poc_mode: bool = False
