@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { deleteSavedLead, downloadRouteCsv, listSavedLeads, type SavedLead } from "../api/client";
+import { deleteSavedLead, downloadRouteCsv, listNotes, listSavedLeads, type SavedLead } from "../api/client";
 
 type Props = {
   token?: string;
@@ -46,9 +46,44 @@ export function SavedLeads({ token, currentRouteId, onAddToRoute }: Props) {
   const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
-    listSavedLeads(token, status || undefined)
-      .then(setItems)
-      .catch(() => setItems([]));
+    let cancelled = false;
+
+    async function loadSavedLeads() {
+      try {
+        const base = await listSavedLeads(token, status || undefined);
+        if (!token) {
+          if (!cancelled) setItems(base);
+          return;
+        }
+
+        // Fallback for environments where /saved-leads note preview fields are not populated yet:
+        // hydrate missing preview from /notes per business.
+        const hydrated = await Promise.all(
+          base.map(async (item) => {
+            if (item.latest_note_text) return item;
+            try {
+              const notes = await listNotes(item.business_id, token);
+              if (!notes.length) return item;
+              return {
+                ...item,
+                latest_note_text: notes[0].note_text,
+                latest_note_created_at: notes[0].created_at,
+              };
+            } catch {
+              return item;
+            }
+          }),
+        );
+        if (!cancelled) setItems(hydrated);
+      } catch {
+        if (!cancelled) setItems([]);
+      }
+    }
+
+    loadSavedLeads();
+    return () => {
+      cancelled = true;
+    };
   }, [token, status]);
 
   async function handleDelete(id: string) {
