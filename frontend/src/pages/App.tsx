@@ -1,7 +1,7 @@
 import { SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/clerk-react";
 import { useCallback, useState } from "react";
 
-import { fetchLeads, patchRoute, saveLead, type Lead } from "../api/client";
+import { createNote, fetchLeads, patchRoute, saveLead, type Lead } from "../api/client";
 import { LeadDetail } from "../components/LeadDetail";
 import { LeadList } from "../components/LeadList";
 import { MapPanel } from "../components/MapPanel";
@@ -130,6 +130,22 @@ export function App({ token }: AppProps) {
       await saveLead({ business_id: lead.business_id, route_id: routeId ?? undefined }, token);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save lead");
+    }
+  }
+
+  async function onSaveLeadWithNote(lead: Lead, noteText: string) {
+    try {
+      await saveLead({ business_id: lead.business_id, route_id: routeId ?? undefined }, token);
+      await createNote(
+        {
+          business_id: lead.business_id,
+          route_id: routeId ?? undefined,
+          note_text: noteText,
+        },
+        token,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save lead with note");
     }
   }
 
@@ -293,6 +309,7 @@ export function App({ token }: AppProps) {
                 leads={leads}
                 selectedLead={selectedLead}
                 onSave={onSaveLead}
+                onSaveWithNote={onSaveLeadWithNote}
                 onSelect={setSelectedLead}
                 onAddStop={onAddStop}
                 corridorMiles={corridorMiles}

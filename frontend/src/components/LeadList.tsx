@@ -1,9 +1,11 @@
 import type { Lead } from "../api/client";
+import { useState } from "react";
 
 type Props = {
   leads: Lead[];
   selectedLead: Lead | null;
   onSave: (lead: Lead) => void;
+  onSaveWithNote: (lead: Lead, noteText: string) => void;
   onSelect: (lead: Lead) => void;
   onAddStop: (lead: Lead) => void;
   corridorMiles: string;
@@ -37,7 +39,20 @@ function IconNavigation() {
   );
 }
 
-export function LeadList({ leads, selectedLead, onSave, onSelect, onAddStop, corridorMiles }: Props) {
+export function LeadList({ leads, selectedLead, onSave, onSaveWithNote, onSelect, onAddStop, corridorMiles }: Props) {
+  const [draftNotes, setDraftNotes] = useState<Record<string, string>>({});
+
+  function setDraft(businessId: string, value: string) {
+    setDraftNotes((prev) => ({ ...prev, [businessId]: value }));
+  }
+
+  function submitDraft(lead: Lead) {
+    const noteText = (draftNotes[lead.business_id] ?? "").trim();
+    if (!noteText) return;
+    onSaveWithNote(lead, noteText);
+    setDraft(lead.business_id, "");
+  }
+
   if (leads.length === 0) {
     return (
       <div className="empty-state">
@@ -80,6 +95,10 @@ export function LeadList({ leads, selectedLead, onSave, onSelect, onAddStop, cor
               {lead.explanation.fit} · {lead.explanation.actionability}
             </p>
 
+            <p className="lead-explanation" style={{ marginTop: "-0.1rem" }}>
+              {lead.address ?? "Address unavailable"}
+            </p>
+
             {(lead.phone || lead.website) && (
               <div className="lead-contact-row">
                 {lead.phone && <span className="lead-contact-item">{lead.phone}</span>}
@@ -98,6 +117,20 @@ export function LeadList({ leads, selectedLead, onSave, onSelect, onAddStop, cor
             )}
 
             <div className="lead-card-actions">
+              <input
+                type="text"
+                placeholder="Quick note..."
+                className="form-input"
+                style={{ fontSize: "0.72rem", minWidth: "9rem" }}
+                value={draftNotes[lead.business_id] ?? ""}
+                onChange={(e) => setDraft(lead.business_id, e.target.value)}
+                onClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter") return;
+                  e.stopPropagation();
+                  submitDraft(lead);
+                }}
+              />
               <button
                 type="button"
                 className="btn btn-ghost btn-sm"
@@ -108,6 +141,16 @@ export function LeadList({ leads, selectedLead, onSave, onSelect, onAddStop, cor
               >
                 <IconBookmarkPlus />
                 Save
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  submitDraft(lead);
+                }}
+              >
+                Save + Note
               </button>
               {lead.lat != null && lead.lng != null && (
                 <button
