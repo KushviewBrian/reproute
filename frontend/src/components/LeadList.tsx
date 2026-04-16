@@ -79,6 +79,23 @@ export function LeadList({ leads, selectedLead, onSave, onSelect, corridorMiles 
               {lead.explanation.fit} · {lead.explanation.actionability}
             </p>
 
+            {(lead.phone || lead.website) && (
+              <div className="lead-contact-row">
+                {lead.phone && <span className="lead-contact-item">{lead.phone}</span>}
+                {lead.website && (
+                  <a
+                    className="lead-contact-item lead-contact-link"
+                    href={lead.website.startsWith("http") ? lead.website : `https://${lead.website}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {lead.website.replace(/^https?:\/\//, "").replace(/\/$/, "")}
+                  </a>
+                )}
+              </div>
+            )}
+
             <div className="lead-card-actions">
               <button
                 type="button"

@@ -7,6 +7,7 @@ type ResolvedLocation = { label: string; lat: number; lng: number };
 
 type Props = {
   token?: string;
+  corridor: number;
   onCreated: (created: { routeId: string; routeGeoJson: GeoJSON.LineString }) => void;
 };
 
@@ -37,10 +38,9 @@ async function resolveAddress(text: string, token?: string): Promise<ResolvedLoc
   return data.results[0];
 }
 
-export function RouteForm({ token, onCreated }: Props) {
+export function RouteForm({ token, corridor, onCreated }: Props) {
   const [originText, setOriginText] = useState("");
   const [destText, setDestText] = useState("");
-  const [corridor, setCorridor] = useState(1609);
   const [loading, setLoading] = useState(false);
   const [locating, setLocating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -130,21 +130,6 @@ export function RouteForm({ token, onCreated }: Props) {
           onChange={(e) => setDestText(e.target.value)}
           disabled={loading}
         />
-      </div>
-
-      <div className="form-field">
-        <label htmlFor="corridor-select">Corridor width</label>
-        <select
-          id="corridor-select"
-          className="form-select"
-          value={corridor}
-          onChange={(e) => setCorridor(Number(e.target.value))}
-          disabled={loading}
-        >
-          <option value={805}>0.5 mi — tight focus</option>
-          <option value={1609}>1.0 mi — recommended</option>
-          <option value={3218}>2.0 mi — wide sweep</option>
-        </select>
       </div>
 
       {error && (

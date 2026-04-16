@@ -150,7 +150,7 @@ export function App({ token }: AppProps) {
         <div className="sidebar-scroll">
           {tab === "route" && (
             <>
-              <RouteForm onCreated={onCreated} token={token} />
+              <RouteForm onCreated={onCreated} token={token} corridor={corridor} />
 
               <div className="filter-strip">
                 <h3>Filters</h3>
@@ -187,13 +187,13 @@ export function App({ token }: AppProps) {
                   <div className="toggle-group">
                     <button
                       className={`toggle-chip${hasPhone ? " active" : ""}`}
-                      onClick={() => setHasPhone(hasPhone ? undefined : true)}
+                      onClick={() => { setHasPhone(hasPhone ? undefined : true); }}
                     >
                       Phone
                     </button>
                     <button
                       className={`toggle-chip${hasWebsite ? " active" : ""}`}
-                      onClick={() => setHasWebsite(hasWebsite ? undefined : true)}
+                      onClick={() => { setHasWebsite(hasWebsite ? undefined : true); }}
                     >
                       Website
                     </button>

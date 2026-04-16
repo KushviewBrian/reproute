@@ -499,6 +499,31 @@ body { min-height: 100dvh; }
   overflow: hidden;
 }
 
+.lead-contact-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.lead-contact-item {
+  font-size: 0.68rem;
+  color: var(--gray-500);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.lead-contact-link {
+  color: var(--blue-600, #2563eb);
+  text-decoration: none;
+}
+
+.lead-contact-link:hover {
+  text-decoration: underline;
+}
+
 .lead-card-actions {
   display: flex;
   justify-content: flex-end;
