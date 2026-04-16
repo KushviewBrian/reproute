@@ -77,6 +77,22 @@ async def get_current_user(
     if settings.clerk_jwt_issuer and issuer and settings.clerk_jwt_issuer.rstrip("/") != issuer.rstrip("/"):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token issuer")
 
+    # Optional strict checks when configured
+    if settings.clerk_audience:
+        aud = claims.get("aud")
+        allowed = False
+        if isinstance(aud, str):
+            allowed = aud == settings.clerk_audience
+        elif isinstance(aud, list):
+            allowed = settings.clerk_audience in aud
+        if not allowed:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token audience")
+
+    if settings.clerk_authorized_party:
+        azp = claims.get("azp")
+        if azp != settings.clerk_authorized_party:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token authorized party")
+
     exp = claims.get("exp")
     if exp is not None and float(exp) < datetime.now(timezone.utc).timestamp():
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token expired")

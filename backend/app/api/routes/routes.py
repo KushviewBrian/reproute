@@ -13,6 +13,7 @@ from app.schemas.route import CreateRouteRequest, CreateRouteResponse, PatchRout
 from app.services.lead_service import refresh_route_candidates_and_scores
 from app.services.routing_service import get_route_multi
 from app.utils.geo import linestring_wkt_from_geojson
+from app.utils.rate_limit import enforce_rate_limit
 router = APIRouter()
 
 
@@ -22,6 +23,7 @@ async def create_route(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> CreateRouteResponse:
+    await enforce_rate_limit(f"rl:create_route:{user.id}", limit=30, window_seconds=60)
 
     all_waypoints = (
         [(payload.origin_lat, payload.origin_lng)]
@@ -73,6 +75,7 @@ async def get_route_summary(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> RouteSummaryResponse:
+    await enforce_rate_limit(f"rl:get_route:{user.id}", limit=180, window_seconds=60)
     result = await db.execute(select(Route).where(Route.id == route_id, Route.user_id == user.id))
     route = result.scalar_one_or_none()
     if not route:
@@ -97,6 +100,7 @@ async def patch_route(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> RouteSummaryResponse:
+    await enforce_rate_limit(f"rl:patch_route:{user.id}", limit=60, window_seconds=60)
     result = await db.execute(select(Route).where(Route.id == route_id, Route.user_id == user.id))
     route = result.scalar_one_or_none()
     if not route:

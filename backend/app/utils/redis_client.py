@@ -26,25 +26,25 @@ class SafeRedisClient:
         try:
             return await _get_client().set(key, value, ex=ex)
         except Exception:
-            return True
+            return False
 
     async def incr(self, key: str):
         try:
             return await _get_client().incr(key)
         except Exception:
-            return 1
+            return None
 
     async def expire(self, key: str, seconds: int):
         try:
             return await _get_client().expire(key, seconds)
         except Exception:
-            return True
+            return False
 
     async def ping(self):
         try:
             return await _get_client().ping()
         except Exception:
-            return "NOOP"
+            return False
 
 
 redis_client = SafeRedisClient()

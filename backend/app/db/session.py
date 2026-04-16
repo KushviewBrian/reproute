@@ -34,9 +34,7 @@ def _get_engine():
     return _engine, _SessionLocal
 
 
-# Expose engine for the debug endpoint
-@property
-def engine():
+def get_engine():
     e, _ = _get_engine()
     return e
 

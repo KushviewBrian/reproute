@@ -37,7 +37,7 @@ services:
     healthCheckPath: /
     dockerBuildArgs:
       - VITE_API_BASE_URL=https://reproute.onrender.com
-      - VITE_MAP_PMTILES_URL=https://protomaps.github.io/basemaps-assets/tiles/v3/{z}/{x}/{y}.mvt
+      - VITE_MAP_PMTILES_URL=
     envVars:
       - key: VITE_CLERK_PUBLISHABLE_KEY
         sync: false

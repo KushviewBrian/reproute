@@ -9,6 +9,7 @@ from app.models.route import Route
 from app.models.user import User
 from app.schemas.lead import LeadItem, LeadsResponse
 from app.services.lead_service import fetch_leads
+from app.utils.rate_limit import enforce_rate_limit
 
 router = APIRouter()
 
@@ -25,6 +26,7 @@ async def get_route_leads(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> LeadsResponse:
+    await enforce_rate_limit(f"rl:get_leads:{user.id}", limit=180, window_seconds=60)
     route = await db.get(Route, route_id)
     if not route or route.user_id != user.id:
         raise HTTPException(status_code=404, detail="Route not found")

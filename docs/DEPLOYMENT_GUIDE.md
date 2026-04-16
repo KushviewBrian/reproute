@@ -151,7 +151,7 @@ Add all these in the **Environment** section:
 ```
 ENVIRONMENT=production
 POC_MODE=false
-DATABASE_URL=postgresql+asyncpg://postgres:REPROUTE27593423@db.sppihvgjtbfagypnkzpu.supabase.co:5432/postgres
+DATABASE_URL=postgresql+asyncpg://postgres:<YOUR_DB_PASSWORD>@db.<YOUR_PROJECT_REF>.supabase.co:5432/postgres
 REDIS_URL=<your-upstash-redis-url>
 SECRET_KEY=<generate-a-long-random-string>
 CORS_ALLOW_ORIGINS=https://your-frontend-domain.com

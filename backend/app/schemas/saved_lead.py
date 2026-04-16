@@ -1,6 +1,7 @@
 from uuid import UUID
 
 from pydantic import BaseModel
+from typing import Literal
 
 
 class CreateSavedLeadRequest(BaseModel):
@@ -9,7 +10,7 @@ class CreateSavedLeadRequest(BaseModel):
 
 
 class UpdateSavedLeadRequest(BaseModel):
-    status: str | None = None
+    status: Literal["saved", "visited", "called", "follow_up", "not_interested"] | None = None
     priority: int | None = None
 
 

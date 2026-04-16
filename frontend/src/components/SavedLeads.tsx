@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { deleteSavedLead, exportRouteCsvUrl, listSavedLeads, type SavedLead } from "../api/client";
+import { deleteSavedLead, downloadRouteCsv, listSavedLeads, type SavedLead } from "../api/client";
 
 type Props = {
   token?: string;
@@ -43,6 +43,7 @@ function IconTrash() {
 export function SavedLeads({ token, currentRouteId, onAddToRoute }: Props) {
   const [items, setItems] = useState<SavedLead[]>([]);
   const [status, setStatus] = useState<string>("");
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     listSavedLeads(token, status || undefined)
@@ -55,21 +56,30 @@ export function SavedLeads({ token, currentRouteId, onAddToRoute }: Props) {
     setItems((prev) => prev.filter((it) => it.id !== id));
   }
 
+  async function handleExport() {
+    if (!currentRouteId) return;
+    setExporting(true);
+    try {
+      await downloadRouteCsv(currentRouteId, token, true);
+    } finally {
+      setExporting(false);
+    }
+  }
+
   return (
     <>
       <div className="saved-header">
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <h2>Saved Leads</h2>
           {currentRouteId && (
-            <a
+            <button
               className="btn btn-ghost btn-sm"
-              href={exportRouteCsvUrl(currentRouteId, true)}
-              target="_blank"
-              rel="noreferrer"
+              onClick={handleExport}
+              disabled={exporting}
             >
               <IconDownload />
-              Export CSV
-            </a>
+              {exporting ? "Exporting..." : "Export CSV"}
+            </button>
           )}
         </div>
 

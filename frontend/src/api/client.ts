@@ -148,3 +148,20 @@ export async function createNote(payload: {
 export function exportRouteCsvUrl(routeId: string, savedOnly = false): string {
   return `${API_BASE}/export/routes/${routeId}/leads.csv?saved_only=${savedOnly}`;
 }
+
+export async function downloadRouteCsv(routeId: string, token?: string, savedOnly = false): Promise<void> {
+  const headers: Record<string, string> = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const resp = await fetch(exportRouteCsvUrl(routeId, savedOnly), { headers });
+  if (!resp.ok) {
+    const body = await resp.text();
+    throw new Error(`${resp.status}: ${body}`);
+  }
+  const blob = await resp.blob();
+  const href = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = href;
+  a.download = `route_${routeId}_leads.csv`;
+  a.click();
+  URL.revokeObjectURL(href);
+}

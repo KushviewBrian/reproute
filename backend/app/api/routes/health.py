@@ -1,5 +1,5 @@
 import httpx
-from fastapi import APIRouter, Depends, Header
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,7 +21,7 @@ async def health(db: AsyncSession = Depends(get_db)) -> dict:
         db_ok = False
         db_err = str(e)
     try:
-        await redis_client.ping()
+        redis_ok = bool(await redis_client.ping())
     except Exception:
         redis_ok = False
 
@@ -33,16 +33,17 @@ async def health(db: AsyncSession = Depends(get_db)) -> dict:
 async def debug(authorization: str | None = Header(default=None)) -> dict:
     """Diagnostic endpoint — checks token presence, DB, Redis, and Photon reachability."""
     settings = get_settings()
+    if settings.environment == "production":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
 
     # Token
     has_token = authorization is not None and authorization.startswith("Bearer ")
-    token_prefix = authorization[:40] + "..." if has_token and authorization else None
 
     # DB
     db_ok = False
     try:
-        from app.db.session import engine
-        async with engine.connect() as conn:
+        from app.db.session import get_engine
+        async with get_engine().connect() as conn:
             await conn.execute(text("SELECT 1"))
         db_ok = True
     except Exception as e:
@@ -55,7 +56,7 @@ async def debug(authorization: str | None = Header(default=None)) -> dict:
     redis_err = None
     try:
         pong = await redis_client.ping()
-        redis_ok = pong is not None
+        redis_ok = bool(pong)
     except Exception as e:
         redis_err = str(e)
 
@@ -78,7 +79,6 @@ async def debug(authorization: str | None = Header(default=None)) -> dict:
 
     return {
         "has_token": has_token,
-        "token_prefix": token_prefix,
         "clerk_jwks_url": settings.clerk_jwks_url or "NOT SET",
         "clerk_jwt_issuer": settings.clerk_jwt_issuer or "NOT SET",
         "geocode_worker_url": settings.geocode_worker_url,
