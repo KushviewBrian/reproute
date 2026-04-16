@@ -117,11 +117,11 @@ export function LeadList({ leads, selectedLead, onSave, onSaveWithNote, onSelect
             )}
 
             <div className="lead-card-actions">
+              <div className="lead-note-row">
               <input
                 type="text"
                 placeholder="Quick note..."
-                className="form-input"
-                style={{ fontSize: "0.72rem", minWidth: "9rem" }}
+                className="form-input lead-note-input"
                 value={draftNotes[lead.business_id] ?? ""}
                 onChange={(e) => setDraft(lead.business_id, e.target.value)}
                 onClick={(e) => e.stopPropagation()}
@@ -131,6 +131,8 @@ export function LeadList({ leads, selectedLead, onSave, onSaveWithNote, onSelect
                   submitDraft(lead);
                 }}
               />
+              </div>
+              <div className="lead-actions-row">
               <button
                 type="button"
                 className="btn btn-ghost btn-sm"
@@ -165,6 +167,7 @@ export function LeadList({ leads, selectedLead, onSave, onSaveWithNote, onSelect
                   + Stop
                 </button>
               )}
+              </div>
             </div>
           </li>
         ))}
