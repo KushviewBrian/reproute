@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 
 import { createRoute, geocode, type Lead } from "../api/client";
 
@@ -63,12 +63,15 @@ export function RouteForm({ token, corridor, pendingStop, onPendingStopAdded, on
   const [locating, setLocating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // If a pending stop arrives, append it as a waypoint before destination
-  if (pendingStop && pendingStop.lat != null && pendingStop.lng != null) {
-    const label = `${pendingStop.name} (${pendingStop.lat!.toFixed(5)}, ${pendingStop.lng!.toFixed(5)})`;
-    setWaypoints((prev) => [...prev, label]);
-    onPendingStopAdded();
-  }
+  const prevPendingStop = useRef<typeof pendingStop>(null);
+  useEffect(() => {
+    if (pendingStop && pendingStop !== prevPendingStop.current && pendingStop.lat != null && pendingStop.lng != null) {
+      prevPendingStop.current = pendingStop;
+      const label = `${pendingStop.name} (${pendingStop.lat!.toFixed(5)}, ${pendingStop.lng!.toFixed(5)})`;
+      setWaypoints((prev) => [...prev, label]);
+      onPendingStopAdded();
+    }
+  }, [pendingStop, onPendingStopAdded]);
 
   const canSubmit = !!originText.trim() && !!destText.trim() && !loading;
 
