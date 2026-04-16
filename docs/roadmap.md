@@ -35,15 +35,55 @@ The phase checklists below remain the original baseline spec.
 | Phase 6 — Agent validation | Not started | 0% |
 | Phase 7 — Polish + launch prep | Not started | ~10% |
 
-### What is complete now
+### Complete (implemented in codebase)
 
-- Monorepo structure exists and is active (`backend/`, `frontend/`, `infra/`, `scripts/`, `docs/`).
-- Backend FastAPI app, health endpoint, auth-protected core routes, and DB schema/migration exist.
-- Core route flow works: create route, candidate query, score, retrieve leads.
-- Overture ingestion + classification scripts exist and are wired.
-- Discovery UI exists (route entry, lead list/map, lead detail, saved leads).
-- Save, notes, and CSV export are implemented and working in current prototype flow.
-- PWA build setup exists (`vite-plugin-pwa`) and frontend builds successfully.
+- Monorepo structure and service layout exist (`backend/`, `frontend/`, `infra/`, `scripts/`, `docs/`).
+- Backend FastAPI app with auth-protected route/geocode/leads/saved-leads/notes/export flows is implemented.
+- Route candidate query + scoring pipeline is implemented end-to-end.
+- Overture ingestion + classification scripts are implemented.
+- Validation tooling exists for Phase 1-2 evidence:
+  - `scripts/explain_candidate_query.py`
+  - `scripts/validate_scoring.py`
+  - `docs/PHASE1_4_VALIDATION.md`
+- Discovery UI exists (route entry, lead list/map, lead detail, saved tab).
+- PWA setup exists (`vite-plugin-pwa`) with manifest and public icons.
+- Saved workflow features are implemented:
+  - save lead + status update + delete
+  - note creation/list/edit
+  - CSV export
+  - saved status-priority ordering
+  - saved count badge
+  - saved route context + note preview
+
+### Confirmed (verified by build/runtime checks)
+
+- Backend Python code compiles: `python3 -m compileall backend/app scripts`.
+- Frontend production build succeeds: `cd frontend && npm run build`.
+- Prototype user flow has been manually validated in recent runs:
+  - fetch prospects
+  - save lead
+  - add/view notes
+  - saved section rendering
+
+### Pending (not yet fully confirmed or completed)
+
+- Phase 1 evidence capture on real data:
+  - commit `EXPLAIN ANALYZE` output for real route(s)
+  - run metro ingestion and archive QA metrics
+- Phase 2 evidence capture:
+  - run scoring harness on 5 real routes
+  - document score calibration protocol from real usage
+- Phase 3 product polish:
+  - final mobile ergonomics pass on real devices
+  - optional: corridor polygon overlay
+  - optional: mini-map in lead detail drawer
+- Phase 4 robustness:
+  - full offline/reconnect behavior verification for saved leads + notes
+  - optional: export all saved leads across routes from Saved tab
+- Phase 0 infra completeness:
+  - deterministic CI/CD deploy automation and rollback notes
+  - clean-machine reproducibility check
+- Phases 5-7 (hardening, agent validation, launch prep) remain largely pending.
 
 ### Remaining by phase (detailed)
 
