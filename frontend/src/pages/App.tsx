@@ -1,5 +1,5 @@
 import { SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/clerk-react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { createNote, fetchLeads, patchRoute, saveLead, type Lead } from "../api/client";
 import { LeadDetail } from "../components/LeadDetail";
@@ -72,6 +72,15 @@ export function App({ token }: AppProps) {
   const [error, setError] = useState<string | null>(null);
   const [cacheMeta, setCacheMeta] = useState<string | null>(null);
   const [savedCount, setSavedCount] = useState(0);
+  const [showInstallHint, setShowInstallHint] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const dismissed = window.localStorage.getItem("reproute_install_hint_dismissed");
+    if (!dismissed) {
+      setShowInstallHint(true);
+    }
+  }, []);
 
   function sortLeads(input: Lead[], mode: "score" | "business_type"): Lead[] {
     const next = [...input];
@@ -218,6 +227,25 @@ export function App({ token }: AppProps) {
         </div>
 
         <div className="sidebar-scroll">
+          {showInstallHint && (
+            <div className="cache-banner" style={{ marginBottom: "0.5rem" }}>
+              <IconDatabase />
+              <span style={{ flex: 1 }}>
+                Install for faster access: Android Chrome menu → Install App. iPhone Safari share menu → Add to Home Screen.
+              </span>
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => {
+                  window.localStorage.setItem("reproute_install_hint_dismissed", "1");
+                  setShowInstallHint(false);
+                }}
+                style={{ marginLeft: "0.4rem", padding: "0.15rem 0.35rem" }}
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
+
           {tab === "route" && (
             <>
               <RouteForm

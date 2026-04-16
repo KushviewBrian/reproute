@@ -36,4 +36,15 @@ Route-aware prospecting PWA for field insurance agents.
 
 ## Status
 
-Phase 0/1 scaffolding in progress. Provider credentials are placeholder-driven until infra setup is complete.
+Core Phase 1-4 prototype flow is implemented (route -> leads -> save -> notes -> export).
+
+## Validation scripts
+
+- Spatial query index evidence:
+  - `python scripts/explain_candidate_query.py --database-url "$INGEST_DATABASE_URL" --route-id "<route_uuid>"`
+- Ingestion QA metrics:
+  - `python scripts/ingest_overture.py --parquet data/indianapolis_places.parquet --database-url "$INGEST_DATABASE_URL"`
+- Scoring quality/latency harness:
+  - `python scripts/validate_scoring.py --api-base-url "http://localhost:8000" --token "<jwt>" --route-id "<id1>" --route-id "<id2>"`
+
+See [docs/PHASE1_4_VALIDATION.md](/Users/brian/reproute/docs/PHASE1_4_VALIDATION.md) for the full playbook.

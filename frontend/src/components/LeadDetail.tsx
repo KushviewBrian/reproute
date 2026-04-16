@@ -75,8 +75,12 @@ function IconBookmark() {
 }
 
 export function LeadDetail({ lead, routeId, token, onClose }: Props) {
-  const [notes, setNotes] = useState<{ id: string; note_text: string; created_at: string }[]>([]);
+  const [notes, setNotes] = useState<
+    { id: string; note_text: string; created_at: string; outcome_status?: string | null; next_action?: string | null }[]
+  >([]);
   const [noteText, setNoteText] = useState("");
+  const [noteOutcome, setNoteOutcome] = useState("saved");
+  const [nextAction, setNextAction] = useState("");
   const [status, setStatus] = useState("saved");
   const [queueCount, setQueueCount] = useState(0);
   const [saving, setSaving] = useState(false);
@@ -86,6 +90,8 @@ export function LeadDetail({ lead, routeId, token, onClose }: Props) {
     listNotes(lead.business_id, token)
       .then((rows) => setNotes(rows))
       .catch(() => setNotes([]));
+    setNoteOutcome(status);
+    setNextAction("");
     setQueueCount(getQueuedCount());
   }, [lead, token]);
 
@@ -119,21 +125,50 @@ export function LeadDetail({ lead, routeId, token, onClose }: Props) {
   async function addNote() {
     if (!noteText.trim()) return;
     if (!navigator.onLine || !token) {
-      enqueueNote({ business_id: lead!.business_id, route_id: routeId, note_text: noteText, outcome_status: status });
+      enqueueNote({
+        business_id: lead!.business_id,
+        route_id: routeId,
+        note_text: noteText,
+        outcome_status: noteOutcome,
+        next_action: nextAction || undefined,
+      });
       setNotes((prev) => [
-        { id: `queued-${Date.now()}`, note_text: `${noteText} (queued)`, created_at: new Date().toISOString() },
+        {
+          id: `queued-${Date.now()}`,
+          note_text: `${noteText} (queued)`,
+          created_at: new Date().toISOString(),
+          outcome_status: noteOutcome,
+          next_action: nextAction || null,
+        },
         ...prev,
       ]);
       setNoteText("");
+      setNextAction("");
       setQueueCount(getQueuedCount());
       return;
     }
     const created = await createNote(
-      { business_id: lead!.business_id, route_id: routeId, note_text: noteText, outcome_status: status },
+      {
+        business_id: lead!.business_id,
+        route_id: routeId,
+        note_text: noteText,
+        outcome_status: noteOutcome,
+        next_action: nextAction || undefined,
+      },
       token,
     );
-    setNotes((prev) => [{ id: created.id, note_text: created.note_text, created_at: created.created_at }, ...prev]);
+    setNotes((prev) => [
+      {
+        id: created.id,
+        note_text: created.note_text,
+        created_at: created.created_at,
+        outcome_status: created.outcome_status,
+        next_action: created.next_action,
+      },
+      ...prev,
+    ]);
     setNoteText("");
+    setNextAction("");
   }
 
   const phoneHref = lead.phone ? `tel:${lead.phone.replace(/\D/g, "")}` : null;
@@ -257,6 +292,24 @@ export function LeadDetail({ lead, routeId, token, onClose }: Props) {
               onChange={(e) => setNoteText(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) addNote(); }}
             />
+            <select
+              className="form-select"
+              style={{ minWidth: "9rem", alignSelf: "flex-end" }}
+              value={noteOutcome}
+              onChange={(e) => setNoteOutcome(e.target.value)}
+            >
+              {STATUS_OPTIONS.map((s) => (
+                <option key={s.value} value={s.value}>{s.label}</option>
+              ))}
+            </select>
+            <input
+              type="text"
+              className="form-input"
+              style={{ minWidth: "10rem", alignSelf: "flex-end" }}
+              value={nextAction}
+              placeholder="Next action (optional)"
+              onChange={(e) => setNextAction(e.target.value)}
+            />
             <button
               className="btn btn-primary btn-sm"
               style={{ alignSelf: "flex-end" }}
@@ -275,6 +328,13 @@ export function LeadDetail({ lead, routeId, token, onClose }: Props) {
               <div key={n.id} className="note-item">
                 <p className="note-timestamp">{new Date(n.created_at).toLocaleString()}</p>
                 <p className="note-text">{n.note_text}</p>
+                {(n.outcome_status || n.next_action) && (
+                  <p className="note-timestamp" style={{ marginTop: "0.2rem" }}>
+                    {n.outcome_status ? `Outcome: ${n.outcome_status}` : ""}
+                    {n.outcome_status && n.next_action ? " · " : ""}
+                    {n.next_action ? `Next: ${n.next_action}` : ""}
+                  </p>
+                )}
               </div>
             ))}
           </div>

@@ -9,10 +9,30 @@ async function req<T>(path: string, options: RequestInit = {}, token?: string): 
   }
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  const resp = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  let resp: Response;
+  try {
+    resp = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  } catch {
+    throw new Error("Network error: unable to reach API");
+  }
+
   if (!resp.ok) {
-    const body = await resp.text();
-    throw new Error(`${resp.status}: ${body}`);
+    let detail = "";
+    const contentType = resp.headers.get("content-type") || "";
+    if (contentType.includes("application/json")) {
+      const data = await resp.json().catch(() => null);
+      detail = data?.detail || data?.message || "";
+    } else {
+      detail = await resp.text();
+    }
+
+    if (resp.status === 401) {
+      throw new Error("401: authentication expired, sign in again");
+    }
+    if (resp.status === 429) {
+      throw new Error("429: rate limit exceeded, wait and retry");
+    }
+    throw new Error(`${resp.status}: ${detail || "request failed"}`);
   }
   if (resp.status === 204) return {} as T;
   return resp.json() as Promise<T>;
@@ -113,6 +133,14 @@ export async function fetchLeads(
 export async function geocode(query: string, token?: string) {
   return req<{ results: { label: string; lat: number; lng: number }[]; degraded: boolean }>(
     `/geocode?q=${encodeURIComponent(query)}`,
+    {},
+    token,
+  );
+}
+
+export async function reverseGeocode(lat: number, lng: number, token?: string) {
+  return req<{ results: { label: string; lat: number; lng: number }[]; degraded: boolean }>(
+    `/geocode?lat=${encodeURIComponent(String(lat))}&lng=${encodeURIComponent(String(lng))}`,
     {},
     token,
   );

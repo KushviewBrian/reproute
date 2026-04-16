@@ -23,7 +23,7 @@ async def create_route(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> CreateRouteResponse:
-    await enforce_rate_limit(f"rl:create_route:{user.id}", limit=30, window_seconds=60)
+    await enforce_rate_limit(f"rl:create_route:{user.id}", limit=60, window_seconds=3600)
 
     all_waypoints = (
         [(payload.origin_lat, payload.origin_lng)]

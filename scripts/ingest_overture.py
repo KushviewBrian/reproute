@@ -4,8 +4,10 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import subprocess
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 
 import duckdb
 from shapely import wkb
@@ -51,19 +53,18 @@ def _to_list(value) -> list:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Ingest Overture places parquet into PostGIS")
-    parser.add_argument("--parquet", required=True, help="Path to Overture GeoParquet file")
+    parser.add_argument("--parquet", help="Path to Overture GeoParquet file")
+    parser.add_argument("--bbox", help="Bounding box as minLng,minLat,maxLng,maxLat")
+    parser.add_argument("--label", default="metro", help="Label used when downloading by bbox")
     parser.add_argument("--database-url", required=True, help="Sync postgres URL")
     parser.add_argument("--batch-size", type=int, default=1000)
-    return parser.parse_args()
+    args = parser.parse_args()
+    if not args.parquet and not args.bbox:
+        parser.error("Either --parquet or --bbox is required")
+    return args
 
 
-def normalize_row(row: dict) -> dict | None:
-    names = row.get("names") or {}
-    name = names.get("primary") if isinstance(names, dict) else None
-    if not name:
-        return None
-
-    geometry = row.get("geometry")
+def _extract_point(geometry: object) -> tuple[float | None, float | None]:
     lng = None
     lat = None
     if isinstance(geometry, dict):
@@ -76,6 +77,39 @@ def normalize_row(row: dict) -> dict | None:
         if getattr(point, "geom_type", None) == "Point":
             lng = float(point.x)
             lat = float(point.y)
+    return lng, lat
+
+
+def _download_by_bbox(bbox: str, label: str) -> str:
+    out_dir = Path("data")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    output = out_dir / f"{label.replace(' ', '_').lower()}_places.parquet"
+    cmd = [
+        "overturemaps",
+        "download",
+        f"--bbox={bbox}",
+        "--type=place",
+        "-f=geoparquet",
+        f"-o={output}",
+    ]
+    print(f"running: {' '.join(cmd)}")
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    if proc.returncode != 0:
+        raise RuntimeError(
+            "overturemaps download failed.\n"
+            f"stdout:\n{proc.stdout[-2000:]}\n"
+            f"stderr:\n{proc.stderr[-2000:]}"
+        )
+    return str(output)
+
+
+def normalize_row(row: dict) -> dict | None:
+    names = row.get("names") or {}
+    name = names.get("primary") if isinstance(names, dict) else None
+    if not name:
+        return None
+
+    lng, lat = _extract_point(row.get("geometry"))
     if lng is None or lat is None:
         return None
 
@@ -164,17 +198,51 @@ def upsert_batch(engine, rows: list[dict]) -> None:
 
 def main() -> None:
     args = parse_args()
+    parquet_path = args.parquet or _download_by_bbox(args.bbox, args.label)
+    print(f"loading parquet={parquet_path}")
+
     conn = duckdb.connect()
-    rows = conn.execute(f"SELECT * FROM read_parquet('{args.parquet}')").fetchdf().to_dict("records")
+    rows = conn.execute(f"SELECT * FROM read_parquet('{parquet_path}')").fetchdf().to_dict("records")
 
     engine = create_engine(args.database_url)
 
     batch: list[dict] = []
     processed = 0
-    inserted = 0
+    upserted = 0
+    missing_name = 0
+    missing_geometry = 0
+    missing_basic_category = 0
+    with_phone = 0
+    with_website = 0
+    status_open = 0
+    permanently_closed = 0
 
     for raw in rows:
         processed += 1
+
+        names = raw.get("names") or {}
+        name = names.get("primary") if isinstance(names, dict) else None
+        if not name:
+            missing_name += 1
+
+        lng, lat = _extract_point(raw.get("geometry"))
+        if lng is None or lat is None:
+            missing_geometry += 1
+
+        if not raw.get("basic_category"):
+            missing_basic_category += 1
+
+        phones = _to_list(raw.get("phones"))
+        websites = _to_list(raw.get("websites"))
+        if phones:
+            with_phone += 1
+        if websites:
+            with_website += 1
+        if raw.get("operating_status") == "open":
+            status_open += 1
+        if raw.get("operating_status") == "permanently_closed":
+            permanently_closed += 1
+
         normalized = normalize_row(raw)
         if not normalized:
             continue
@@ -182,15 +250,31 @@ def main() -> None:
 
         if len(batch) >= args.batch_size:
             upsert_batch(engine, batch)
-            inserted += len(batch)
-            print(f"processed={processed} upserted={inserted}")
+            upserted += len(batch)
             batch = []
+        if processed % 10000 == 0:
+            print(f"processed={processed} upserted={upserted}")
 
     if batch:
         upsert_batch(engine, batch)
-        inserted += len(batch)
+        upserted += len(batch)
 
-    print(f"done processed={processed} upserted={inserted}")
+    def pct(value: int) -> float:
+        if processed == 0:
+            return 0.0
+        return round((value / processed) * 100.0, 2)
+
+    print(
+        "done "
+        f"processed={processed} upserted={upserted} "
+        f"missing_name_rate={pct(missing_name)}% "
+        f"missing_geometry_rate={pct(missing_geometry)}% "
+        f"missing_basic_category_rate={pct(missing_basic_category)}% "
+        f"with_phone_rate={pct(with_phone)}% "
+        f"with_website_rate={pct(with_website)}% "
+        f"open_rate={pct(status_open)}% "
+        f"permanently_closed_rate={pct(permanently_closed)}%"
+    )
 
 
 if __name__ == "__main__":

@@ -27,10 +27,10 @@ The phase checklists below remain the original baseline spec.
 | Phase | Status | Completion |
 |---|---|---|
 | Phase 0 — Foundation | In progress | ~80% |
-| Phase 1 — Data + routing foundation | In progress | ~85% |
-| Phase 2 — Classification + scoring | In progress | ~80% |
-| Phase 3 — Discovery UI | In progress | ~85% |
-| Phase 4 — Save, notes, export | In progress | ~85% |
+| Phase 1 — Data + routing foundation | In progress | ~95% |
+| Phase 2 — Classification + scoring | In progress | ~90% |
+| Phase 3 — Discovery UI | In progress | ~92% |
+| Phase 4 — Save, notes, export | In progress | ~92% |
 | Phase 5 — Pre-pilot hardening | Not started | ~20% |
 | Phase 6 — Agent validation | Not started | 0% |
 | Phase 7 — Polish + launch prep | Not started | ~10% |
@@ -59,41 +59,31 @@ The phase checklists below remain the original baseline spec.
 
 ### Phase 1 — Data + routing foundation (remaining)
 
-- Add missing admin ingestion endpoints from spec:
-  - `POST /admin/import/overture`
-  - `GET /admin/import/jobs/{id}`
-- Add explicit ingestion job tracking model/status (queued/running/done/failed).
-- Complete geocode cache architecture alignment:
-  - current service works, but Worker/KV edge-proxy path should be fully wired/documented if required by chosen architecture.
-- Capture and document `EXPLAIN ANALYZE` evidence for candidate query index usage.
+- Run and commit `EXPLAIN ANALYZE` evidence for at least one real route.
+- Run ingestion with real metro bbox and capture QA summary metrics in docs.
 
 ### Phase 2 — Classification + scoring (remaining)
 
 - Complete data QA loop against real imported dataset:
   - measure and reduce `"Other Commercial"` toward roadmap threshold.
-- Add scoring validation harness:
-  - repeatable test routes + output audit report (top results quality and latency).
+- Execute scoring validation harness on 5 real routes and archive results.
 - Persist calibration procedure:
   - document score-weight tuning protocol from real save behavior.
 
 ### Phase 3 — Discovery UI (remaining)
 
-- Saved-leads offline support:
-  - current offline support is mainly route leads + note queue; add saved-leads offline cache/read path.
-- Install/onboarding polish:
-  - explicit Android install UX + iOS “Add to Home Screen” guidance UI.
-- Route context in saved cards:
-  - show route origin/destination or route label where lead was saved from.
 - Final mobile UX pass:
   - one-thumb ergonomics, edge-case handling, and no-overlap checks across target devices.
+- Optional but recommended:
+  - add explicit corridor polygon overlay (not only route glow).
+  - add mini-map inside lead detail drawer.
 
 ### Phase 4 — Save, notes, export (remaining)
 
-- Saved tab sorting/priority workflow:
-  - implement explicit status-priority sorting (Follow Up first) per roadmap.
-- Saved count badge in nav.
 - Robust offline behavior completeness:
   - ensure saved leads + note interactions degrade gracefully and sync predictably after reconnect.
+- Optional enhancement:
+  - export all saved leads across routes from Saved tab (in addition to per-route export).
 
 ### Phase 5 — Pre-pilot hardening (remaining, critical before pilot)
 
@@ -128,7 +118,7 @@ The phase checklists below remain the original baseline spec.
 ### Next recommended execution order
 
 1. Close remaining Phase 3/4 product gaps (offline saved leads, saved sorting, nav badge).
-2. Implement Phase 1 admin ingestion endpoints + job tracking.
+2. Run Phase 1/2 evidence scripts and commit artifacts (`docs/PHASE1_4_VALIDATION.md`).
 3. Complete Phase 5 hardening and evidence capture.
 4. Run Phase 6 agent validation before any launch commitments.
 

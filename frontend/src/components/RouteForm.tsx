@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 
-import { createRoute, geocode } from "../api/client";
+import { createRoute, geocode, reverseGeocode } from "../api/client";
 
 type ResolvedLocation = { label: string; lat: number; lng: number };
 
@@ -58,6 +58,8 @@ async function resolveAddress(text: string, token?: string): Promise<ResolvedLoc
 export function RouteForm({ token, corridor, waypoints, onWaypointsChange, onCreated }: Props) {
   const [originText, setOriginText] = useState("");
   const [destText, setDestText] = useState("");
+  const [originSuggestions, setOriginSuggestions] = useState<string[]>([]);
+  const [destSuggestions, setDestSuggestions] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [locating, setLocating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -74,12 +76,59 @@ export function RouteForm({ token, corridor, waypoints, onWaypointsChange, onCre
 
   const canSubmit = !!originText.trim() && !!destText.trim() && !loading;
 
+  useEffect(() => {
+    const trimmed = originText.trim();
+    if (trimmed.length < 3) {
+      setOriginSuggestions([]);
+      return;
+    }
+    const timer = window.setTimeout(async () => {
+      try {
+        const data = await geocode(trimmed, token);
+        setOriginSuggestions(data.results.slice(0, 5).map((r) => r.label));
+      } catch {
+        setOriginSuggestions([]);
+      }
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [originText, token]);
+
+  useEffect(() => {
+    const trimmed = destText.trim();
+    if (trimmed.length < 3) {
+      setDestSuggestions([]);
+      return;
+    }
+    const timer = window.setTimeout(async () => {
+      try {
+        const data = await geocode(trimmed, token);
+        setDestSuggestions(data.results.slice(0, 5).map((r) => r.label));
+      } catch {
+        setDestSuggestions([]);
+      }
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [destText, token]);
+
   function useMyLocation() {
     setLocating(true);
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setOriginText(`${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)}`);
-        setLocating(false);
+      async (pos) => {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        try {
+          const reversed = await reverseGeocode(lat, lng, token);
+          const first = reversed.results[0];
+          if (first?.label) {
+            setOriginText(first.label);
+          } else {
+            setOriginText(`${lat.toFixed(5)}, ${lng.toFixed(5)}`);
+          }
+        } catch {
+          setOriginText(`${lat.toFixed(5)}, ${lng.toFixed(5)}`);
+        } finally {
+          setLocating(false);
+        }
       },
       () => {
         setError("Could not get current location");
@@ -143,11 +192,17 @@ export function RouteForm({ token, corridor, waypoints, onWaypointsChange, onCre
             id="origin-input"
             className="form-input"
             type="text"
+            list="origin-suggestions"
             placeholder="Start address, city, or zip"
             value={originText}
             onChange={(e) => setOriginText(e.target.value)}
             disabled={loading}
           />
+          <datalist id="origin-suggestions">
+            {originSuggestions.map((s) => (
+              <option key={s} value={s} />
+            ))}
+          </datalist>
           <button
             type="button"
             className="btn btn-icon locate-btn"
@@ -191,11 +246,17 @@ export function RouteForm({ token, corridor, waypoints, onWaypointsChange, onCre
           id="dest-input"
           className="form-input"
           type="text"
+          list="dest-suggestions"
           placeholder="End address, city, or zip"
           value={destText}
           onChange={(e) => setDestText(e.target.value)}
           disabled={loading}
         />
+        <datalist id="dest-suggestions">
+          {destSuggestions.map((s) => (
+            <option key={s} value={s} />
+          ))}
+        </datalist>
       </div>
 
       <button
