@@ -19,11 +19,11 @@ def _get_engine():
         ssl_ctx = ssl.create_default_context()
         ssl_ctx.check_hostname = False
         ssl_ctx.verify_mode = ssl.CERT_NONE
-        connect_args = {"timeout": 10, "command_timeout": 10, "ssl": ssl_ctx, "statement_cache_size": 0}
+        connect_args = {"timeout": 10, "command_timeout": 10, "ssl": ssl_ctx, "statement_cache_size": 0, "prepared_statement_cache_size": 0}
         _engine = create_async_engine(
             settings.database_url,
             echo=False,
-            pool_pre_ping=True,
+            pool_pre_ping=False,
             pool_size=2,
             max_overflow=2,
             connect_args=connect_args,
