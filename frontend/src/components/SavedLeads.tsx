@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 
-import { exportRouteCsvUrl, listSavedLeads, type SavedLead } from "../api/client";
+import { deleteSavedLead, exportRouteCsvUrl, listSavedLeads, type SavedLead } from "../api/client";
 
 type Props = {
   token?: string;
   currentRouteId: string | null;
+  onAddToRoute?: (lead: SavedLead) => void;
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -31,7 +32,15 @@ function IconBookmark() {
   );
 }
 
-export function SavedLeads({ token, currentRouteId }: Props) {
+function IconTrash() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/>
+    </svg>
+  );
+}
+
+export function SavedLeads({ token, currentRouteId, onAddToRoute }: Props) {
   const [items, setItems] = useState<SavedLead[]>([]);
   const [status, setStatus] = useState<string>("");
 
@@ -40,6 +49,11 @@ export function SavedLeads({ token, currentRouteId }: Props) {
       .then(setItems)
       .catch(() => setItems([]));
   }, [token, status]);
+
+  async function handleDelete(id: string) {
+    await deleteSavedLead(id, token);
+    setItems((prev) => prev.filter((it) => it.id !== id));
+  }
 
   return (
     <>
@@ -95,8 +109,28 @@ export function SavedLeads({ token, currentRouteId }: Props) {
                 <p style={{ fontSize: "0.7rem", color: "var(--gray-500)", margin: "0.1rem 0 0" }}>{it.address}</p>
               )}
               {it.phone && (
-                <a href={`tel:${it.phone.replace(/\D/g, "")}`} style={{ fontSize: "0.7rem", color: "var(--gray-500)" }}>{it.phone}</a>
+                <a href={`tel:${it.phone.replace(/\D/g, "")}`} style={{ fontSize: "0.7rem", color: "var(--gray-500)", display: "block" }}>{it.phone}</a>
               )}
+              <div className="lead-card-actions" style={{ marginTop: "0.4rem" }}>
+                {onAddToRoute && (
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => onAddToRoute(it)}
+                  >
+                    + Stop
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  style={{ color: "var(--gray-400)" }}
+                  onClick={() => handleDelete(it.id)}
+                >
+                  <IconTrash />
+                  Delete
+                </button>
+              </div>
             </li>
           ))}
         </ul>

@@ -243,7 +243,20 @@ export function App({ token }: AppProps) {
             </>
           )}
 
-          {tab === "saved" && <SavedLeads token={token} currentRouteId={routeId} />}
+          {tab === "saved" && (
+            <SavedLeads
+              token={token}
+              currentRouteId={routeId}
+              onAddToRoute={(lead) => {
+                if (!lead.business_name) return;
+                const label = lead.address
+                  ? `${lead.business_name}, ${lead.address}`
+                  : lead.business_name;
+                setWaypoints((prev) => [...prev, label]);
+                setTab("route");
+              }}
+            />
+          )}
         </div>
       </aside>
 
@@ -274,7 +287,10 @@ export function App({ token }: AppProps) {
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <path d="M3 12h18M3 6h18M3 18h18" />
           </svg>
-          Rep<span>Route</span>
+          <div>
+            Rep<span>Route</span>
+            <div style={{ fontSize: "0.55rem", opacity: 0.5, letterSpacing: "0.05em", marginTop: "-2px" }}>by Kushview</div>
+          </div>
         </div>
         <SignedIn>
           <UserButton />

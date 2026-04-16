@@ -23,7 +23,6 @@ async def create_saved_lead(
     item = SavedLead(user_id=user.id, business_id=payload.business_id, route_id=payload.route_id)
     db.add(item)
     await db.commit()
-    await db.refresh(item)
     return SavedLeadItem(
         id=item.id,
         user_id=item.user_id,
@@ -83,7 +82,6 @@ async def update_saved_lead(
     if payload.priority is not None:
         item.priority = payload.priority
     await db.commit()
-    await db.refresh(item)
 
     return SavedLeadItem(
         id=item.id,
