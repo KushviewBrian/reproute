@@ -66,7 +66,7 @@ export function App({ token }: AppProps) {
   const [hasWebsite, setHasWebsite] = useState<boolean | undefined>(undefined);
   const [corridor, setCorridor] = useState(1609);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
-  const [pendingStop, setPendingStop] = useState<Lead | null>(null);
+  const [waypoints, setWaypoints] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [cacheMeta, setCacheMeta] = useState<string | null>(null);
 
@@ -126,6 +126,13 @@ export function App({ token }: AppProps) {
     await loadLeads(routeId);
   }
 
+  function onAddStop(lead: Lead) {
+    if (lead.lat == null || lead.lng == null) return;
+    const label = `${lead.name}, ${lead.lat.toFixed(5)}, ${lead.lng.toFixed(5)}`;
+    setWaypoints((prev) => [...prev, label]);
+    setTab("route");
+  }
+
   const corridorMiles = (corridor / 1609).toFixed(1);
 
   const appContent = (
@@ -155,8 +162,8 @@ export function App({ token }: AppProps) {
                 onCreated={onCreated}
                 token={token}
                 corridor={corridor}
-                pendingStop={pendingStop}
-                onPendingStopAdded={() => setPendingStop(null)}
+                waypoints={waypoints}
+                onWaypointsChange={setWaypoints}
               />
 
               <div className="filter-strip">
@@ -230,7 +237,7 @@ export function App({ token }: AppProps) {
                 selectedLead={selectedLead}
                 onSave={onSaveLead}
                 onSelect={setSelectedLead}
-                onAddStop={(lead) => { setPendingStop(lead); setTab("route"); }}
+                onAddStop={onAddStop}
                 corridorMiles={corridorMiles}
               />
             </>

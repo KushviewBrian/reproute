@@ -1,14 +1,14 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
-import { createRoute, geocode, type Lead } from "../api/client";
+import { createRoute, geocode } from "../api/client";
 
 type ResolvedLocation = { label: string; lat: number; lng: number };
 
 type Props = {
   token?: string;
   corridor: number;
-  pendingStop: Lead | null;
-  onPendingStopAdded: () => void;
+  waypoints: string[];
+  onWaypointsChange: (waypoints: string[]) => void;
   onCreated: (created: { routeId: string; routeGeoJson: GeoJSON.LineString }) => void;
 };
 
@@ -55,23 +55,22 @@ async function resolveAddress(text: string, token?: string): Promise<ResolvedLoc
   return data.results[0];
 }
 
-export function RouteForm({ token, corridor, pendingStop, onPendingStopAdded, onCreated }: Props) {
+export function RouteForm({ token, corridor, waypoints, onWaypointsChange, onCreated }: Props) {
   const [originText, setOriginText] = useState("");
   const [destText, setDestText] = useState("");
-  const [waypoints, setWaypoints] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [locating, setLocating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const prevLenRef = useRef(waypoints.length);
 
-  const prevPendingStop = useRef<typeof pendingStop>(null);
+  // Scroll into view when a new waypoint is added externally (e.g. "+ Stop")
   useEffect(() => {
-    if (pendingStop && pendingStop !== prevPendingStop.current && pendingStop.lat != null && pendingStop.lng != null) {
-      prevPendingStop.current = pendingStop;
-      const label = `${pendingStop.name} (${pendingStop.lat!.toFixed(5)}, ${pendingStop.lng!.toFixed(5)})`;
-      setWaypoints((prev) => [...prev, label]);
-      onPendingStopAdded();
+    if (waypoints.length > prevLenRef.current) {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
-  }, [pendingStop, onPendingStopAdded]);
+    prevLenRef.current = waypoints.length;
+  }, [waypoints.length]);
 
   const canSubmit = !!originText.trim() && !!destText.trim() && !loading;
 
@@ -91,15 +90,15 @@ export function RouteForm({ token, corridor, pendingStop, onPendingStopAdded, on
   }
 
   function addWaypoint() {
-    setWaypoints((prev) => [...prev, ""]);
+    onWaypointsChange([...waypoints, ""]);
   }
 
   function removeWaypoint(i: number) {
-    setWaypoints((prev) => prev.filter((_, idx) => idx !== i));
+    onWaypointsChange(waypoints.filter((_, idx) => idx !== i));
   }
 
   function updateWaypoint(i: number, value: string) {
-    setWaypoints((prev) => prev.map((w, idx) => (idx === i ? value : w)));
+    onWaypointsChange(waypoints.map((w, idx) => (idx === i ? value : w)));
   }
 
   async function submit() {
@@ -208,6 +207,8 @@ export function RouteForm({ token, corridor, pendingStop, onPendingStopAdded, on
       >
         <IconPlus /> Add stop
       </button>
+
+      <div ref={bottomRef} />
 
       {error && (
         <p style={{ fontSize: "0.75rem", color: "#b91c1c", margin: "0.375rem 0" }}>{error}</p>
