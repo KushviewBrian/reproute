@@ -64,6 +64,8 @@ export type SavedLead = {
   business_name: string | null;
   phone: string | null;
   address: string | null;
+  route_label?: string | null;
+  final_score?: number | null;
   latest_note_text?: string | null;
   latest_note_created_at?: string | null;
 };

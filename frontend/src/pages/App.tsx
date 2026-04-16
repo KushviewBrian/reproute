@@ -71,6 +71,7 @@ export function App({ token }: AppProps) {
   const [waypoints, setWaypoints] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [cacheMeta, setCacheMeta] = useState<string | null>(null);
+  const [savedCount, setSavedCount] = useState(0);
 
   function sortLeads(input: Lead[], mode: "score" | "business_type"): Lead[] {
     const next = [...input];
@@ -198,6 +199,21 @@ export function App({ token }: AppProps) {
           >
             <IconBookmark />
             Saved
+            {savedCount > 0 && (
+              <span
+                style={{
+                  marginLeft: "0.35rem",
+                  fontSize: "0.65rem",
+                  fontWeight: 700,
+                  padding: "0.05rem 0.35rem",
+                  borderRadius: "100px",
+                  background: "var(--gray-200)",
+                  color: "var(--gray-700)",
+                }}
+              >
+                {savedCount}
+              </span>
+            )}
           </button>
         </div>
 
@@ -328,6 +344,7 @@ export function App({ token }: AppProps) {
             <SavedLeads
               token={token}
               currentRouteId={routeId}
+              onCountChange={setSavedCount}
               onAddToRoute={(lead) => {
                 if (!lead.business_name) return;
                 const label = lead.address

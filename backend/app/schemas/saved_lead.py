@@ -25,5 +25,7 @@ class SavedLeadItem(BaseModel):
     business_name: str | None = None
     phone: str | None = None
     address: str | None = None
+    route_label: str | None = None
+    final_score: int | None = None
     latest_note_text: str | None = None
     latest_note_created_at: datetime | None = None

@@ -8,7 +8,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import get_current_user
 from app.db.session import get_db
 from app.models.business import Business
+from app.models.lead_score import LeadScore
 from app.models.note import Note
+from app.models.route import Route
 from app.models.saved_lead import SavedLead
 from app.models.user import User
 from app.schemas.saved_lead import CreateSavedLeadRequest, SavedLeadItem, UpdateSavedLeadRequest
@@ -79,8 +81,24 @@ async def list_saved_leads(
     db: AsyncSession = Depends(get_db),
 ) -> list[SavedLeadItem]:
     q = (
-        select(SavedLead, Business.name, Business.phone, Business.address_line1, Business.city, Business.state)
+        select(
+            SavedLead,
+            Business.name,
+            Business.phone,
+            Business.address_line1,
+            Business.city,
+            Business.state,
+            Route.origin_label,
+            Route.destination_label,
+            LeadScore.final_score,
+        )
         .join(Business, Business.id == SavedLead.business_id, isouter=True)
+        .join(Route, Route.id == SavedLead.route_id, isouter=True)
+        .join(
+            LeadScore,
+            (LeadScore.route_id == SavedLead.route_id) & (LeadScore.business_id == SavedLead.business_id),
+            isouter=True,
+        )
         .where(SavedLead.user_id == user.id)
     )
     if status:
@@ -113,6 +131,12 @@ async def list_saved_leads(
             business_name=i.name,
             phone=i.phone,
             address=", ".join(p for p in [i.address_line1, i.city, i.state] if p) or None,
+            route_label=(
+                f"{i.origin_label or 'Unknown start'} → {i.destination_label or 'Unknown destination'}"
+                if i.origin_label or i.destination_label
+                else None
+            ),
+            final_score=int(i.final_score) if i.final_score is not None else None,
             latest_note_text=(notes_by_business.get(i.SavedLead.business_id) or (None, None))[0],
             latest_note_created_at=(notes_by_business.get(i.SavedLead.business_id) or (None, None))[1],
         )

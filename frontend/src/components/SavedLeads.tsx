@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 
 import { deleteSavedLead, downloadRouteCsv, listNotes, listSavedLeads, type SavedLead } from "../api/client";
+import { cacheSavedLeads, readCachedSavedLeads } from "../lib/savedLeadCache";
 
 type Props = {
   token?: string;
   currentRouteId: string | null;
   onAddToRoute?: (lead: SavedLead) => void;
+  onCountChange?: (count: number) => void;
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -40,10 +42,31 @@ function IconTrash() {
   );
 }
 
-export function SavedLeads({ token, currentRouteId, onAddToRoute }: Props) {
+const STATUS_PRIORITY: Record<string, number> = {
+  follow_up: 0,
+  saved: 1,
+  called: 2,
+  visited: 3,
+  not_interested: 4,
+};
+
+function sortSavedLeads(items: SavedLead[]): SavedLead[] {
+  return [...items].sort((a, b) => {
+    const pa = STATUS_PRIORITY[a.status] ?? 99;
+    const pb = STATUS_PRIORITY[b.status] ?? 99;
+    if (pa !== pb) return pa - pb;
+    const sa = a.final_score ?? -1;
+    const sb = b.final_score ?? -1;
+    if (sa !== sb) return sb - sa;
+    return (a.business_name ?? "").localeCompare(b.business_name ?? "");
+  });
+}
+
+export function SavedLeads({ token, currentRouteId, onAddToRoute, onCountChange }: Props) {
   const [items, setItems] = useState<SavedLead[]>([]);
   const [status, setStatus] = useState<string>("");
   const [exporting, setExporting] = useState(false);
+  const [cacheMeta, setCacheMeta] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -74,9 +97,27 @@ export function SavedLeads({ token, currentRouteId, onAddToRoute }: Props) {
             }
           }),
         );
-        if (!cancelled) setItems(hydrated);
+        const sorted = sortSavedLeads(hydrated);
+        cacheSavedLeads(status, sorted);
+        if (!cancelled) {
+          setItems(sorted);
+          setCacheMeta(null);
+          onCountChange?.(sorted.length);
+        }
       } catch {
-        if (!cancelled) setItems([]);
+        const cached = readCachedSavedLeads(status);
+        if (!cancelled) {
+          if (cached) {
+            const sorted = sortSavedLeads(cached.items);
+            setItems(sorted);
+            setCacheMeta(`Cached ${new Date(cached.updatedAt).toLocaleString()}`);
+            onCountChange?.(sorted.length);
+          } else {
+            setItems([]);
+            setCacheMeta(null);
+            onCountChange?.(0);
+          }
+        }
       }
     }
 
@@ -88,7 +129,12 @@ export function SavedLeads({ token, currentRouteId, onAddToRoute }: Props) {
 
   async function handleDelete(id: string) {
     await deleteSavedLead(id, token);
-    setItems((prev) => prev.filter((it) => it.id !== id));
+    setItems((prev) => {
+      const next = sortSavedLeads(prev.filter((it) => it.id !== id));
+      onCountChange?.(next.length);
+      cacheSavedLeads(status, next);
+      return next;
+    });
   }
 
   async function handleExport() {
@@ -130,6 +176,9 @@ export function SavedLeads({ token, currentRouteId, onAddToRoute }: Props) {
           <option value="follow_up">Follow Up</option>
           <option value="not_interested">Not Interested</option>
         </select>
+        {cacheMeta && (
+          <p style={{ fontSize: "0.7rem", color: "var(--gray-400)", marginTop: "0.35rem" }}>{cacheMeta}</p>
+        )}
       </div>
 
       {items.length === 0 ? (
@@ -152,6 +201,11 @@ export function SavedLeads({ token, currentRouteId, onAddToRoute }: Props) {
               </div>
               {it.address && (
                 <p style={{ fontSize: "0.7rem", color: "var(--gray-500)", margin: "0.1rem 0 0" }}>{it.address}</p>
+              )}
+              {it.route_label && (
+                <p style={{ fontSize: "0.68rem", color: "var(--gray-400)", margin: "0.15rem 0 0" }}>
+                  Route: {it.route_label}
+                </p>
               )}
               {it.phone && (
                 <a href={`tel:${it.phone.replace(/\D/g, "")}`} style={{ fontSize: "0.7rem", color: "var(--gray-500)", display: "block" }}>{it.phone}</a>
