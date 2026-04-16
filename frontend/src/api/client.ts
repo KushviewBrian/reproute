@@ -26,6 +26,7 @@ export type CreateRouteRequest = {
   destination_lat: number;
   destination_lng: number;
   corridor_width_meters: number;
+  waypoints?: { label: string; lat: number; lng: number }[];
 };
 
 export type CreateRouteResponse = {

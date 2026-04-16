@@ -11,7 +11,7 @@ from app.models.route_candidate import RouteCandidate
 from app.models.user import User
 from app.schemas.route import CreateRouteRequest, CreateRouteResponse, PatchRouteRequest, RouteSummaryResponse
 from app.services.lead_service import refresh_route_candidates_and_scores
-from app.services.routing_service import get_route
+from app.services.routing_service import get_route_multi
 from app.utils.geo import linestring_wkt_from_geojson
 router = APIRouter()
 
@@ -23,12 +23,12 @@ async def create_route(
     db: AsyncSession = Depends(get_db),
 ) -> CreateRouteResponse:
 
-    route_response = await get_route(
-        origin_lat=payload.origin_lat,
-        origin_lng=payload.origin_lng,
-        destination_lat=payload.destination_lat,
-        destination_lng=payload.destination_lng,
+    all_waypoints = (
+        [(payload.origin_lat, payload.origin_lng)]
+        + [(w.lat, w.lng) for w in payload.waypoints]
+        + [(payload.destination_lat, payload.destination_lng)]
     )
+    route_response = await get_route_multi(all_waypoints)
 
     feature = route_response.get("features", [{}])[0]
     geometry = feature.get("geometry")

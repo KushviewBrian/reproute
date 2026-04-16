@@ -3,6 +3,12 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 
+class Waypoint(BaseModel):
+    label: str
+    lat: float
+    lng: float
+
+
 class CreateRouteRequest(BaseModel):
     origin_label: str
     origin_lat: float
@@ -11,6 +17,7 @@ class CreateRouteRequest(BaseModel):
     destination_lat: float
     destination_lng: float
     corridor_width_meters: int = Field(default=1609, ge=100, le=10000)
+    waypoints: list[Waypoint] = Field(default_factory=list)
 
 
 class CreateRouteResponse(BaseModel):

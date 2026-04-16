@@ -1,13 +1,14 @@
 import { useState } from "react";
 
-import { createRoute, geocode } from "../api/client";
-
+import { createRoute, geocode, type Lead } from "../api/client";
 
 type ResolvedLocation = { label: string; lat: number; lng: number };
 
 type Props = {
   token?: string;
   corridor: number;
+  pendingStop: Lead | null;
+  onPendingStopAdded: () => void;
   onCreated: (created: { routeId: string; routeGeoJson: GeoJSON.LineString }) => void;
 };
 
@@ -27,6 +28,22 @@ function IconSearch() {
   );
 }
 
+function IconPlus() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+    </svg>
+  );
+}
+
+function IconX() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+    </svg>
+  );
+}
+
 async function resolveAddress(text: string, token?: string): Promise<ResolvedLocation> {
   const trimmed = text.trim();
   const coordMatch = trimmed.match(/^(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)$/);
@@ -38,12 +55,20 @@ async function resolveAddress(text: string, token?: string): Promise<ResolvedLoc
   return data.results[0];
 }
 
-export function RouteForm({ token, corridor, onCreated }: Props) {
+export function RouteForm({ token, corridor, pendingStop, onPendingStopAdded, onCreated }: Props) {
   const [originText, setOriginText] = useState("");
   const [destText, setDestText] = useState("");
+  const [waypoints, setWaypoints] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [locating, setLocating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // If a pending stop arrives, append it as a waypoint before destination
+  if (pendingStop && pendingStop.lat != null && pendingStop.lng != null) {
+    const label = `${pendingStop.name} (${pendingStop.lat!.toFixed(5)}, ${pendingStop.lng!.toFixed(5)})`;
+    setWaypoints((prev) => [...prev, label]);
+    onPendingStopAdded();
+  }
 
   const canSubmit = !!originText.trim() && !!destText.trim() && !loading;
 
@@ -62,14 +87,27 @@ export function RouteForm({ token, corridor, onCreated }: Props) {
     );
   }
 
+  function addWaypoint() {
+    setWaypoints((prev) => [...prev, ""]);
+  }
+
+  function removeWaypoint(i: number) {
+    setWaypoints((prev) => prev.filter((_, idx) => idx !== i));
+  }
+
+  function updateWaypoint(i: number, value: string) {
+    setWaypoints((prev) => prev.map((w, idx) => (idx === i ? value : w)));
+  }
+
   async function submit() {
     setLoading(true);
     setError(null);
     try {
-      let originLoc: ResolvedLocation;
-      let destLoc: ResolvedLocation;
-      originLoc = await resolveAddress(originText, token);
-      destLoc = await resolveAddress(destText, token);
+      const originLoc = await resolveAddress(originText, token);
+      const destLoc = await resolveAddress(destText, token);
+      const resolvedWaypoints = await Promise.all(
+        waypoints.filter((w) => w.trim()).map((w) => resolveAddress(w, token))
+      );
 
       const created = await createRoute(
         {
@@ -80,6 +118,7 @@ export function RouteForm({ token, corridor, onCreated }: Props) {
           destination_lat: destLoc.lat,
           destination_lng: destLoc.lng,
           corridor_width_meters: corridor,
+          waypoints: resolvedWaypoints.map((w) => ({ label: w.label, lat: w.lat, lng: w.lng })),
         },
         token,
       );
@@ -119,6 +158,31 @@ export function RouteForm({ token, corridor, onCreated }: Props) {
         </div>
       </div>
 
+      {waypoints.map((wp, i) => (
+        <div className="form-field" key={i}>
+          <label>Stop {i + 1}</label>
+          <div className="input-row">
+            <input
+              className="form-input"
+              type="text"
+              placeholder="Address, city, or coordinates"
+              value={wp}
+              onChange={(e) => updateWaypoint(i, e.target.value)}
+              disabled={loading}
+            />
+            <button
+              type="button"
+              className="btn btn-icon"
+              title="Remove stop"
+              onClick={() => removeWaypoint(i)}
+              disabled={loading}
+            >
+              <IconX />
+            </button>
+          </div>
+        </div>
+      ))}
+
       <div className="form-field">
         <label htmlFor="dest-input">To</label>
         <input
@@ -131,6 +195,16 @@ export function RouteForm({ token, corridor, onCreated }: Props) {
           disabled={loading}
         />
       </div>
+
+      <button
+        type="button"
+        className="btn btn-ghost btn-sm"
+        style={{ alignSelf: "flex-start", marginBottom: "0.25rem" }}
+        onClick={addWaypoint}
+        disabled={loading}
+      >
+        <IconPlus /> Add stop
+      </button>
 
       {error && (
         <p style={{ fontSize: "0.75rem", color: "#b91c1c", margin: "0.375rem 0" }}>{error}</p>

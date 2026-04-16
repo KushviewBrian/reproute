@@ -5,6 +5,7 @@ type Props = {
   selectedLead: Lead | null;
   onSave: (lead: Lead) => void;
   onSelect: (lead: Lead) => void;
+  onAddStop: (lead: Lead) => void;
   corridorMiles: string;
 };
 
@@ -36,7 +37,7 @@ function IconNavigation() {
   );
 }
 
-export function LeadList({ leads, selectedLead, onSave, onSelect, corridorMiles }: Props) {
+export function LeadList({ leads, selectedLead, onSave, onSelect, onAddStop, corridorMiles }: Props) {
   if (leads.length === 0) {
     return (
       <div className="empty-state">
@@ -108,6 +109,19 @@ export function LeadList({ leads, selectedLead, onSave, onSelect, corridorMiles 
                 <IconBookmarkPlus />
                 Save
               </button>
+              {lead.lat != null && lead.lng != null && (
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  title="Add as route stop"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onAddStop(lead);
+                  }}
+                >
+                  + Stop
+                </button>
+              )}
             </div>
           </li>
         ))}

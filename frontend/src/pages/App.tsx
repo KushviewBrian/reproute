@@ -66,6 +66,7 @@ export function App({ token }: AppProps) {
   const [hasWebsite, setHasWebsite] = useState<boolean | undefined>(undefined);
   const [corridor, setCorridor] = useState(1609);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
+  const [pendingStop, setPendingStop] = useState<Lead | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [cacheMeta, setCacheMeta] = useState<string | null>(null);
 
@@ -150,7 +151,13 @@ export function App({ token }: AppProps) {
         <div className="sidebar-scroll">
           {tab === "route" && (
             <>
-              <RouteForm onCreated={onCreated} token={token} corridor={corridor} />
+              <RouteForm
+                onCreated={onCreated}
+                token={token}
+                corridor={corridor}
+                pendingStop={pendingStop}
+                onPendingStopAdded={() => setPendingStop(null)}
+              />
 
               <div className="filter-strip">
                 <h3>Filters</h3>
@@ -223,6 +230,7 @@ export function App({ token }: AppProps) {
                 selectedLead={selectedLead}
                 onSave={onSaveLead}
                 onSelect={setSelectedLead}
+                onAddStop={(lead) => { setPendingStop(lead); setTab("route"); }}
                 corridorMiles={corridorMiles}
               />
             </>
@@ -259,7 +267,7 @@ export function App({ token }: AppProps) {
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <path d="M3 12h18M3 6h18M3 18h18" />
           </svg>
-          Re<span>route</span>
+          Rep<span>Route</span>
         </div>
         <SignedIn>
           <UserButton />
@@ -272,7 +280,7 @@ export function App({ token }: AppProps) {
             <div className="signin-icon">
               <IconLock />
             </div>
-            <p className="signin-title">Welcome to Reproute</p>
+            <p className="signin-title">Welcome to RepRoute</p>
             <p className="signin-subtitle">Sign in to start discovering prospects along your route.</p>
             <SignInButton>
               <button className="btn btn-primary" style={{ marginTop: "0.25rem" }}>
