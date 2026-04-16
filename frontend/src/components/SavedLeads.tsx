@@ -86,15 +86,16 @@ export function SavedLeads({ token, currentRouteId }: Props) {
           {items.map((it) => (
             <li key={it.id} className="saved-card">
               <div className="saved-card-top">
-                <span className="saved-business-id">{it.business_id.slice(0, 8)}…</span>
+                <span className="saved-business-name">{it.business_name ?? it.business_id.slice(0, 8) + "…"}</span>
                 <span className={`status-pill status-${it.status}`}>
                   {STATUS_LABELS[it.status] ?? it.status}
                 </span>
               </div>
-              {it.priority != null && (
-                <span style={{ fontSize: "0.7rem", color: "var(--gray-400)" }}>
-                  Priority {it.priority}
-                </span>
+              {it.address && (
+                <p style={{ fontSize: "0.7rem", color: "var(--gray-500)", margin: "0.1rem 0 0" }}>{it.address}</p>
+              )}
+              {it.phone && (
+                <a href={`tel:${it.phone.replace(/\D/g, "")}`} style={{ fontSize: "0.7rem", color: "var(--gray-500)" }}>{it.phone}</a>
               )}
             </li>
           ))}

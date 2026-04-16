@@ -770,6 +770,12 @@ body { min-height: 100dvh; }
   font-family: "JetBrains Mono", "Fira Code", monospace;
 }
 
+.saved-business-name {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--gray-800);
+}
+
 /* ─── Map area ───────────────────────────────────────────────────────────── */
 .map-area {
   position: relative;

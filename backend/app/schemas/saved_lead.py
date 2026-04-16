@@ -20,3 +20,6 @@ class SavedLeadItem(BaseModel):
     business_id: UUID
     status: str
     priority: int
+    business_name: str | None = None
+    phone: str | None = None
+    address: str | None = None

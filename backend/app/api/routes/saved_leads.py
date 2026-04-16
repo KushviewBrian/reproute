@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user
 from app.db.session import get_db
+from app.models.business import Business
 from app.models.saved_lead import SavedLead
 from app.models.user import User
 from app.schemas.saved_lead import CreateSavedLeadRequest, SavedLeadItem, UpdateSavedLeadRequest
@@ -41,19 +42,26 @@ async def list_saved_leads(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> list[SavedLeadItem]:
-    q = select(SavedLead).where(SavedLead.user_id == user.id)
+    q = (
+        select(SavedLead, Business.name, Business.phone, Business.address_line1, Business.city, Business.state)
+        .join(Business, Business.id == SavedLead.business_id, isouter=True)
+        .where(SavedLead.user_id == user.id)
+    )
     if status:
         q = q.where(SavedLead.status == status)
     q = q.limit(limit).offset(offset)
-    rows = (await db.execute(q)).scalars().all()
+    rows = (await db.execute(q)).all()
     return [
         SavedLeadItem(
-            id=i.id,
-            user_id=i.user_id,
-            route_id=i.route_id,
-            business_id=i.business_id,
-            status=i.status,
-            priority=i.priority,
+            id=i.SavedLead.id,
+            user_id=i.SavedLead.user_id,
+            route_id=i.SavedLead.route_id,
+            business_id=i.SavedLead.business_id,
+            status=i.SavedLead.status,
+            priority=i.SavedLead.priority,
+            business_name=i.name,
+            phone=i.phone,
+            address=", ".join(p for p in [i.address_line1, i.city, i.state] if p) or None,
         )
         for i in rows
     ]

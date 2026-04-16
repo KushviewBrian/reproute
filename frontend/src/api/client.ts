@@ -61,6 +61,9 @@ export type SavedLead = {
   business_id: string;
   status: string;
   priority: number;
+  business_name: string | null;
+  phone: string | null;
+  address: string | null;
 };
 
 export type Note = {
