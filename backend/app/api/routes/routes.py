@@ -54,7 +54,6 @@ async def create_route(
         ors_response_json=route_response,
     )
     db.add(route)
-    await db.flush()  # assigns route.id without triggering a geom refresh
     await db.commit()
 
     lead_count = await refresh_route_candidates_and_scores(db, route.id, payload.corridor_width_meters)
