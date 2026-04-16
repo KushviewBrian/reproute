@@ -17,6 +17,123 @@ Phases are sequential. Do not start Phase N+1 until Phase N's definition of done
 
 ---
 
+## Current status (Updated April 16, 2026)
+
+This section is the authoritative progress snapshot for the current codebase.  
+The phase checklists below remain the original baseline spec.
+
+### Progress summary
+
+| Phase | Status | Completion |
+|---|---|---|
+| Phase 0 — Foundation | In progress | ~80% |
+| Phase 1 — Data + routing foundation | In progress | ~85% |
+| Phase 2 — Classification + scoring | In progress | ~80% |
+| Phase 3 — Discovery UI | In progress | ~85% |
+| Phase 4 — Save, notes, export | In progress | ~85% |
+| Phase 5 — Pre-pilot hardening | Not started | ~20% |
+| Phase 6 — Agent validation | Not started | 0% |
+| Phase 7 — Polish + launch prep | Not started | ~10% |
+
+### What is complete now
+
+- Monorepo structure exists and is active (`backend/`, `frontend/`, `infra/`, `scripts/`, `docs/`).
+- Backend FastAPI app, health endpoint, auth-protected core routes, and DB schema/migration exist.
+- Core route flow works: create route, candidate query, score, retrieve leads.
+- Overture ingestion + classification scripts exist and are wired.
+- Discovery UI exists (route entry, lead list/map, lead detail, saved leads).
+- Save, notes, and CSV export are implemented and working in current prototype flow.
+- PWA build setup exists (`vite-plugin-pwa`) and frontend builds successfully.
+
+### Remaining by phase (detailed)
+
+### Phase 0 — Foundation (remaining)
+
+- Finalize tiles strategy in production config:
+  - Either complete Protomaps PMTiles on R2 path end-to-end, or explicitly lock to raster fallback in roadmap and envs.
+- CI/CD deploy path:
+  - CI currently builds/tests; production deploy steps are still placeholders.
+  - Add deterministic deploy actions (Render + frontend host) with secrets and rollback notes.
+- Validate local reproducibility from clean machine:
+  - one-command bring-up, migration, and smoke flow.
+
+### Phase 1 — Data + routing foundation (remaining)
+
+- Add missing admin ingestion endpoints from spec:
+  - `POST /admin/import/overture`
+  - `GET /admin/import/jobs/{id}`
+- Add explicit ingestion job tracking model/status (queued/running/done/failed).
+- Complete geocode cache architecture alignment:
+  - current service works, but Worker/KV edge-proxy path should be fully wired/documented if required by chosen architecture.
+- Capture and document `EXPLAIN ANALYZE` evidence for candidate query index usage.
+
+### Phase 2 — Classification + scoring (remaining)
+
+- Complete data QA loop against real imported dataset:
+  - measure and reduce `"Other Commercial"` toward roadmap threshold.
+- Add scoring validation harness:
+  - repeatable test routes + output audit report (top results quality and latency).
+- Persist calibration procedure:
+  - document score-weight tuning protocol from real save behavior.
+
+### Phase 3 — Discovery UI (remaining)
+
+- Saved-leads offline support:
+  - current offline support is mainly route leads + note queue; add saved-leads offline cache/read path.
+- Install/onboarding polish:
+  - explicit Android install UX + iOS “Add to Home Screen” guidance UI.
+- Route context in saved cards:
+  - show route origin/destination or route label where lead was saved from.
+- Final mobile UX pass:
+  - one-thumb ergonomics, edge-case handling, and no-overlap checks across target devices.
+
+### Phase 4 — Save, notes, export (remaining)
+
+- Saved tab sorting/priority workflow:
+  - implement explicit status-priority sorting (Follow Up first) per roadmap.
+- Saved count badge in nav.
+- Robust offline behavior completeness:
+  - ensure saved leads + note interactions degrade gracefully and sync predictably after reconnect.
+
+### Phase 5 — Pre-pilot hardening (remaining, critical before pilot)
+
+- Performance validation:
+  - 20-route benchmark run, p95 target evidence, and regression baseline.
+- Observability:
+  - structured request logging + metrics for route/geocode/scoring/export paths.
+- Security/ops hardening:
+  - enforce documented retention policy and audit logs for note/status changes.
+  - cap export size and ingestion bounds with tested guardrails.
+- Compliance:
+  - full attribution and `docs/licenses.md` completion.
+- Contingency triggers:
+  - explicit runbooks for ORS/Photon self-host and Supabase upgrade when thresholds are hit.
+
+### Phase 6 — Agent validation (remaining)
+
+- Recruit 3–5 real agents in target metro.
+- Run structured sessions (3–5 routes each) with standardized evaluation form.
+- Collect quantitative pass/fail metrics from roadmap section 6.4.
+- Execute one targeted tuning loop if targets are missed.
+
+### Phase 7 — Polish + launch prep (remaining)
+
+- First-run onboarding overlay and complete empty/error state coverage.
+- iOS install banner flow and onboarding docs.
+- Full cross-device QA matrix pass (iOS Safari, Android Chrome, desktop browsers).
+- Production monitoring activation:
+  - Sentry frontend/backend
+  - uptime checks + alerting on degraded `/health`.
+
+### Next recommended execution order
+
+1. Close remaining Phase 3/4 product gaps (offline saved leads, saved sorting, nav badge).
+2. Implement Phase 1 admin ingestion endpoints + job tracking.
+3. Complete Phase 5 hardening and evidence capture.
+4. Run Phase 6 agent validation before any launch commitments.
+
+---
+
 ## Tech stack reference
 
 | Layer | Choice | Notes |

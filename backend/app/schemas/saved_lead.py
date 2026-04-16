@@ -2,6 +2,7 @@ from uuid import UUID
 
 from pydantic import BaseModel
 from typing import Literal
+from datetime import datetime
 
 
 class CreateSavedLeadRequest(BaseModel):
@@ -24,3 +25,5 @@ class SavedLeadItem(BaseModel):
     business_name: str | None = None
     phone: str | None = None
     address: str | None = None
+    latest_note_text: str | None = None
+    latest_note_created_at: datetime | None = None

@@ -121,6 +121,14 @@ export function SavedLeads({ token, currentRouteId, onAddToRoute }: Props) {
               {it.phone && (
                 <a href={`tel:${it.phone.replace(/\D/g, "")}`} style={{ fontSize: "0.7rem", color: "var(--gray-500)", display: "block" }}>{it.phone}</a>
               )}
+              {it.latest_note_text && (
+                <p style={{ fontSize: "0.72rem", color: "var(--gray-700)", margin: "0.35rem 0 0", lineHeight: 1.35 }}>
+                  Note: {it.latest_note_text}
+                  {it.latest_note_created_at ? (
+                    <span style={{ color: "var(--gray-400)" }}> ({new Date(it.latest_note_created_at).toLocaleString()})</span>
+                  ) : null}
+                </p>
+              )}
               <div className="lead-card-actions" style={{ marginTop: "0.4rem" }}>
                 {onAddToRoute && (
                   <button

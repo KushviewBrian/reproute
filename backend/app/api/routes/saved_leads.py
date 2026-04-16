@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import get_current_user
 from app.db.session import get_db
 from app.models.business import Business
+from app.models.note import Note
 from app.models.saved_lead import SavedLead
 from app.models.user import User
 from app.schemas.saved_lead import CreateSavedLeadRequest, SavedLeadItem, UpdateSavedLeadRequest
@@ -86,6 +87,21 @@ async def list_saved_leads(
         q = q.where(SavedLead.status == status)
     q = q.limit(limit).offset(offset)
     rows = (await db.execute(q)).all()
+
+    business_ids = [r.SavedLead.business_id for r in rows]
+    notes_by_business: dict[UUID, tuple[str, object]] = {}
+    if business_ids:
+        note_rows = (
+            await db.execute(
+                select(Note.business_id, Note.note_text, Note.created_at)
+                .where(Note.user_id == user.id, Note.business_id.in_(business_ids))
+                .order_by(Note.business_id, Note.created_at.desc())
+            )
+        ).all()
+        for business_id, note_text, created_at in note_rows:
+            if business_id not in notes_by_business:
+                notes_by_business[business_id] = (note_text, created_at)
+
     return [
         SavedLeadItem(
             id=i.SavedLead.id,
@@ -97,6 +113,8 @@ async def list_saved_leads(
             business_name=i.name,
             phone=i.phone,
             address=", ".join(p for p in [i.address_line1, i.city, i.state] if p) or None,
+            latest_note_text=(notes_by_business.get(i.SavedLead.business_id) or (None, None))[0],
+            latest_note_created_at=(notes_by_business.get(i.SavedLead.business_id) or (None, None))[1],
         )
         for i in rows
     ]
