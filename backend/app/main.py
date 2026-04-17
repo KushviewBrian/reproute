@@ -1,7 +1,8 @@
 import logging
 
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.api.router import api_router
 from app.core.config import get_settings
@@ -23,6 +24,32 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+def _apply_security_headers(response: Response) -> Response:
+    settings = get_settings()
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    if settings.is_production():
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    return response
+
+
+@app.middleware("http")
+async def request_size_and_security_headers(request: Request, call_next):
+    settings = get_settings()
+    content_length_raw = request.headers.get("content-length")
+    if content_length_raw:
+        try:
+            content_length = int(content_length_raw)
+        except ValueError:
+            response = JSONResponse(status_code=400, content={"detail": "Invalid Content-Length header"})
+            return _apply_security_headers(response)
+        if content_length > settings.request_body_limit_bytes:
+            response = JSONResponse(status_code=413, content={"detail": "Request body too large"})
+            return _apply_security_headers(response)
+    response = await call_next(request)
+    return _apply_security_headers(response)
 
 
 @app.on_event("startup")

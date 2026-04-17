@@ -22,6 +22,7 @@ from app.schemas.saved_lead import (
     TodayRecentRoute,
     UpdateSavedLeadRequest,
 )
+from app.utils.rate_limit import enforce_rate_limit
 
 router = APIRouter()
 
@@ -104,6 +105,7 @@ async def create_saved_lead(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> SavedLeadItem:
+    await enforce_rate_limit(f"rl:saved_leads_write:{user.id}", limit=60, window_seconds=3600)
     existing = (
         await db.execute(
             select(SavedLead).where(
@@ -263,6 +265,7 @@ async def update_saved_lead(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> SavedLeadItem:
+    await enforce_rate_limit(f"rl:saved_leads_write:{user.id}", limit=60, window_seconds=3600)
     item = (await db.execute(select(SavedLead).where(SavedLead.id == saved_lead_id, SavedLead.user_id == user.id))).scalar_one_or_none()
     if not item:
         raise HTTPException(status_code=404, detail="Saved lead not found")
@@ -295,6 +298,7 @@ async def delete_saved_lead(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
+    await enforce_rate_limit(f"rl:saved_leads_write:{user.id}", limit=60, window_seconds=3600)
     item = (await db.execute(select(SavedLead).where(SavedLead.id == saved_lead_id, SavedLead.user_id == user.id))).scalar_one_or_none()
     if not item:
         raise HTTPException(status_code=404, detail="Saved lead not found")

@@ -15,6 +15,7 @@ from app.db.session import _get_engine
 from app.models.import_job import ImportJob
 from app.models.user import User
 from app.schemas.import_job import ImportJobItem, StartOvertureImportRequest
+from app.utils.rate_limit import enforce_rate_limit
 
 router = APIRouter()
 
@@ -183,6 +184,7 @@ async def start_overture_import(
     user: User = Depends(get_current_user),
     admin_secret: str | None = Header(default=None, alias="X-Admin-Secret"),
 ) -> ImportJobItem:
+    await enforce_rate_limit("rl:admin_import:global", limit=5, window_seconds=24 * 60 * 60)
     _require_admin_secret(admin_secret)
     _require_admin_email(user)
     resolved_parquet_path = _validate_parquet_path(payload.parquet_path)

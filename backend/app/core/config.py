@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     validation_hmac_secret: str = ""
 
     cors_allow_origins: str = "http://localhost:5173"
+    request_body_limit_bytes: int = 1_048_576
     poc_mode: bool = False
     poc_user_email: str = "poc@local.dev"
 

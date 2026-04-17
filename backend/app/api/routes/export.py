@@ -15,6 +15,7 @@ from app.models.business import Business
 from app.models.saved_lead import SavedLead
 from app.models.user import User
 from app.services.lead_service import fetch_leads
+from app.utils.rate_limit import enforce_rate_limit
 router = APIRouter()
 
 
@@ -25,6 +26,7 @@ async def export_route_leads_csv(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> StreamingResponse:
+    await enforce_rate_limit(f"rl:export:{user.id}", limit=20, window_seconds=3600)
 
     route = (await db.execute(select(Route).where(Route.id == route_id, Route.user_id == user.id))).scalar_one_or_none()
     if not route:
@@ -83,6 +85,7 @@ async def export_saved_leads_csv(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> StreamingResponse:
+    await enforce_rate_limit(f"rl:export:{user.id}", limit=20, window_seconds=3600)
     saved_rows = (
         await db.execute(
             select(

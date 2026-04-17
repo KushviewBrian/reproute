@@ -1,5 +1,7 @@
 # RepRoute Security Plan (MVP → Pilot)
 
+Last updated: April 17, 2026
+
 ## 1) Scope and Security Objective
 
 Goal: protect user/account data, lead data, and system integrity from unauthorized access, data exfiltration, abuse, and service disruption.
@@ -16,19 +18,19 @@ No plan is literally bulletproof. The objective is defense-in-depth with verifie
 
 ---
 
-## 2) Current High-Risk Gaps (P0 — Open)
+## 2) Current High-Risk Gaps (P0 — Verification Pending)
 
 These are confirmed open issues in the current codebase. Each must be closed before pilot.
 
 ### P0-1: Database TLS certificate verification disabled
-**Status: OPEN**
+**Status: CODE IMPLEMENTED; VERIFICATION PENDING**
 
-`backend/app/db/session.py` explicitly disables hostname and certificate verification:
+`backend/app/db/session.py` now enforces hostname and certificate verification:
 ```python
-ssl_ctx.check_hostname = False
-ssl_ctx.verify_mode = ssl.CERT_NONE
+ssl_ctx.check_hostname = True
+ssl_ctx.verify_mode = ssl.CERT_REQUIRED
 ```
-This permits man-in-the-middle interception on all database traffic in production.
+Startup also refuses production boot if TLS is insecure. Remaining work is production verification against the live pooler cert chain.
 
 **Required fix:**
 - In production, use `ssl.CERT_REQUIRED` with `check_hostname=True`.
@@ -37,15 +39,15 @@ This permits man-in-the-middle interception on all database traffic in productio
 - Add a startup check: if `environment == "production"` and `ssl.CERT_NONE` is active, log a critical error and refuse to start.
 
 ### P0-2: JWT signature verification is optional, not enforced
-**Status: OPEN**
+**Status: CODE IMPLEMENTED; VERIFICATION PENDING**
 
-`backend/app/core/auth.py` only verifies the JWT signature when `clerk_jwks_url` is configured:
+`backend/app/core/auth.py` now verifies signatures in all non-dev/test environments and startup fails in production if JWT config is missing.
 ```python
 if settings.clerk_jwks_url:
     await _verify_token_signature(token, settings.clerk_jwks_url)
 claims = jwt.get_unverified_claims(token)  # always runs regardless
 ```
-If `CLERK_JWKS_URL` is missing or blank, signature verification is silently skipped and unverified claims are accepted. Any forged token with a valid structure is accepted.
+Remaining work is full negative-auth regression coverage in CI/runtime.
 
 **Required fix:**
 - In production (`environment == "production"`), fail startup if `CLERK_JWKS_URL` or `CLERK_JWT_ISSUER` are empty.
@@ -53,21 +55,18 @@ If `CLERK_JWKS_URL` is missing or blank, signature verification is silently skip
 - `CLERK_AUDIENCE` and `CLERK_AUTHORIZED_PARTY` remain optional but should be set for defense-in-depth.
 
 ### P0-3: Admin endpoint accepts any authenticated user who knows the secret
-**Status: OPEN — partial mitigation exists**
+**Status: CODE IMPLEMENTED; VERIFICATION PENDING**
 
-`admin_import.py` correctly requires both a valid JWT and `X-Admin-Secret`. However, the secret is the only privilege gate — any authenticated user who obtains the secret can trigger an import job. There is no role or allowlist check.
-
-Additionally, `parquet_path` from the request payload is passed directly to `subprocess.run` as a CLI argument with no validation. If the admin secret is ever compromised, an attacker can pass arbitrary filesystem paths.
+`admin_import.py` now requires admin email allowlist membership, validates `parquet_path` against allowlisted roots, and enforces single-job concurrency plus global rate limit.
 
 **Required fix:**
-- Add a hard-coded admin email allowlist checked server-side: `if user.email not in settings.admin_allowed_emails: raise 403`.
-- Validate `parquet_path`: canonicalize the path (`Path(parquet_path).resolve()`) and assert it falls within an allowlisted root directory. Since `subprocess.run` is called with an argument list (no `shell=True`), shell injection is not the risk — unauthorized filesystem access is. The fix is allowlisted path roots, not character filtering.
+- Validate behavior in production with configured allowlist and root paths.
 - Consider disabling the admin import endpoint entirely in production once GitHub Actions is the primary ingestion path.
 
 ### P0-4: `poc_mode` bypass has no production guard
-**Status: OPEN**
+**Status: CODE IMPLEMENTED; VERIFICATION PENDING**
 
-`config.py` has `poc_mode: bool = False`. If POC mode bypasses auth checks (even partially), a misconfigured production deploy could expose data. The startup handler logs `poc_mode` but does not fail if it's `True` in production.
+Startup now fails if `environment == "production"` and `poc_mode == True`.
 
 **Required fix:**
 - Add startup check: if `environment == "production"` and `poc_mode == True`, log critical and refuse to start.
@@ -108,17 +107,17 @@ Data classification:
 - Do not store tokens in localStorage on the client (Clerk SDK handles storage correctly by default).
 - No privileged roles derived from mutable client-side state — all authorization is server-side.
 
-**JWKS cache issue (open):**
-The current `_cached_jwks_fetcher()` caches keys indefinitely in a module-level dict with no TTL. If Clerk rotates signing keys, cached JWKS becomes stale and all token verification fails until the process restarts. Fix: add a TTL (e.g., 1 hour) to the JWKS cache and refresh on cache miss or TTL expiry.
+**JWKS cache issue (resolved in code; verify in runtime):**
+JWKS now uses a 1-hour TTL cache. Remaining work is integration validation during key rotation scenarios.
 
-**User cache issue (open):**
-`_user_cache` in `auth.py` is an unbounded in-memory dict. A deleted or suspended Clerk account remains valid in-memory until process restart. Fix: add a max size (LRU eviction) and TTL per entry (e.g., 5 minutes). On auth failure from Clerk, invalidate the cache entry.
+**User cache issue (resolved in code; verify in runtime):**
+`_user_cache` is now TTL+LRU bounded (5 minutes, max 500 entries). Remaining work is runtime validation under auth churn.
 
 **Implementation checklist:**
-- [ ] Startup validator: fail in production if `CLERK_JWKS_URL` or `CLERK_JWT_ISSUER` are empty
-- [ ] Remove conditional signature verification — always verify in non-dev environments
-- [ ] Add TTL to JWKS cache (1 hour); refresh on expiry
-- [ ] Replace unbounded `_user_cache` with TTL-based LRU cache (max 500 entries, 5-minute TTL)
+- [x] Startup validator: fail in production if `CLERK_JWKS_URL` or `CLERK_JWT_ISSUER` are empty
+- [x] Remove conditional signature verification — always verify in non-dev environments
+- [x] Add TTL to JWKS cache (1 hour); refresh on expiry
+- [x] Replace unbounded `_user_cache` with TTL-based LRU cache (max 500 entries, 5-minute TTL)
 - [ ] Unit tests: invalid signature, wrong issuer, expired token, missing JWKS URL
 
 ### 4.2 Authorization (Object and Function Level)
@@ -132,8 +131,8 @@ The current `_cached_jwks_fetcher()` caches keys indefinitely in a module-level 
 
 **Implementation checklist:**
 - [ ] Negative tests for cross-user access on all owned resources: routes, saved-leads, notes, export
-- [ ] Admin email allowlist in `admin_import.py`
-- [ ] `parquet_path` input validation in admin import
+- [x] Admin email allowlist in `admin_import.py`
+- [x] `parquet_path` input validation in admin import
 - [ ] Audit any new endpoint added for ownership filter before merging
 
 ### 4.3 Database Hardening
@@ -200,13 +199,14 @@ The current `_cached_jwks_fetcher()` caches keys indefinitely in a module-level 
 | `PATCH /routes/{id}` | Yes | 60/min per user |
 | `GET /geocode` | Yes | 30/min per user |
 | `GET /routes/{id}/leads` | Yes | 180/min per user |
-| `POST /saved-leads` | **No** | — |
-| `PATCH /saved-leads/{id}` | **No** | — |
-| `DELETE /saved-leads/{id}` | **No** | — |
-| `POST /notes` | **No** | — |
+| `POST /saved-leads` | Yes | 60/hour per user |
+| `PATCH /saved-leads/{id}` | Yes | 60/hour per user |
+| `DELETE /saved-leads/{id}` | Yes | 60/hour per user |
+| `POST /notes` | Yes | 120/hour per user |
 | `GET /notes` | **No** | — |
-| `GET /export/routes/{id}/leads.csv` | **No** | — |
-| `POST /admin/import/overture` | **No** | — |
+| `GET /export/routes/{id}/leads.csv` | Yes | 20/hour per user |
+| `GET /export/saved-leads.csv` | Yes | 20/hour per user |
+| `POST /admin/import/overture` | Yes | 5/day global |
 
 Rate limiting fails open when Redis is unavailable (by design for reliability — acceptable but documented).
 
@@ -218,18 +218,18 @@ Rate limiting fails open when Redis is unavailable (by design for reliability �
 - Admin import: add per-job concurrency limit (max 1 running job at a time) to prevent resource exhaustion.
 
 **Implementation checklist:**
-- [ ] Add `enforce_rate_limit` to saved-leads (write operations): 60/hour per user
-- [ ] Add `enforce_rate_limit` to notes (create): 120/hour per user
-- [ ] Add `enforce_rate_limit` to export: 20/hour per user
-- [ ] Add `enforce_rate_limit` to admin import: 5/day global
-- [ ] Add request body size limit middleware to `main.py`
-- [ ] Add concurrency guard to admin import (check for running jobs before queuing)
+- [x] Add `enforce_rate_limit` to saved-leads (write operations): 60/hour per user
+- [x] Add `enforce_rate_limit` to notes (create): 120/hour per user
+- [x] Add `enforce_rate_limit` to export: 20/hour per user
+- [x] Add `enforce_rate_limit` to admin import: 5/day global
+- [x] Add request body size limit middleware to `main.py`
+- [x] Add concurrency guard to admin import (check for running jobs before queuing)
 
 ### 4.6 Frontend and Browser Security
 
 **Security headers — current state:**
-- Backend (`main.py`): **no security headers set** — only CORS middleware exists.
-- Frontend (Cloudflare Pages): CF Pages may set `X-Content-Type-Options: nosniff` on static asset responses, but this is not guaranteed across all response paths (e.g., Functions, redirects). CSP, HSTS, and Permissions-Policy are never set automatically. Treat the `_headers` file as the authoritative source for all security headers — do not rely on CF Pages defaults.
+- Backend (`main.py`): middleware now sets `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, and production-only HSTS.
+- Frontend (Cloudflare Pages): `_headers` file added with CSP report-only + permissions/referrer/nosniff.
 
 **Required headers and where to set them:**
 
@@ -258,8 +258,8 @@ For the frontend (Cloudflare Pages `_headers` file in `frontend/public/`):
 - Never embed `CLERK_SECRET_KEY`, `DATABASE_URL`, or any backend secret in `VITE_*` env vars.
 
 **Implementation checklist:**
-- [ ] Add security headers middleware to `main.py` (backend)
-- [ ] Add `frontend/public/_headers` for Cloudflare Pages (frontend)
+- [x] Add security headers middleware to `main.py` (backend)
+- [x] Add `frontend/public/_headers` for Cloudflare Pages (frontend)
 - [ ] Deploy CSP in report-only mode first; review violations; then enforce
 - [ ] Verify note text rendered as text content, not HTML
 - [ ] Audit all `VITE_*` env vars — confirm no backend secrets
@@ -433,21 +433,21 @@ For the frontend (Cloudflare Pages `_headers` file in `frontend/public/`):
 ### Phase A (0–7 days) — Critical Lockdown
 Close all P0 items.
 
-- [ ] Fix DB TLS verification in production (P0-1)
-- [ ] Make JWT signature verification unconditional in production (P0-2)
-- [ ] Add startup validator: fail if required auth env vars are missing in production
-- [ ] Add `poc_mode` production guard to startup (P0-4)
-- [ ] Add admin email allowlist + `parquet_path` validation (P0-3)
+- [x] Fix DB TLS verification in production (P0-1)
+- [x] Make JWT signature verification unconditional in production (P0-2)
+- [x] Add startup validator: fail if required auth env vars are missing in production
+- [x] Add `poc_mode` production guard to startup (P0-4)
+- [x] Add admin email allowlist + `parquet_path` validation (P0-3)
 - [ ] Add secret scanning to CI
 
-**Exit criteria:** All P0 items closed, verified by test, deployed to production.
+**Exit criteria:** All P0 items verified by test and production config validation, then deployed to production.
 
 ### Phase B (1–3 weeks) — Hardening
 
-- [ ] Add security headers to backend and Cloudflare Pages `_headers`
+- [x] Add security headers to backend and Cloudflare Pages `_headers`
 - [ ] Deploy CSP in report-only mode; review; enforce
-- [ ] Extend rate limiting to all uncovered endpoint groups
-- [ ] Add JWKS cache TTL and user cache TTL/LRU
+- [x] Extend rate limiting to all uncovered endpoint groups
+- [x] Add JWKS cache TTL and user cache TTL/LRU
 - [ ] Add negative authorization tests across all resource endpoints
 - [ ] Set up log forwarding from Render
 - [ ] Add structured audit logging for mutations and admin access
@@ -473,24 +473,24 @@ Close all P0 items.
 ## 8) Security Checklist (Definition of Done Before Pilot)
 
 ### P0 Items
-- [ ] Production DB uses verified TLS (no `CERT_NONE`, no `check_hostname=False`)
-- [ ] JWT signature verification is unconditional in production (not gated on env var presence)
-- [ ] Startup fails in production if `CLERK_JWKS_URL` or `CLERK_JWT_ISSUER` are empty
-- [ ] Startup fails in production if `poc_mode=True`
-- [ ] Admin import requires email allowlist check, not only shared secret
-- [ ] `parquet_path` validated against allowed pattern before subprocess call
+- [x] Production DB uses verified TLS (no `CERT_NONE`, no `check_hostname=False`)
+- [x] JWT signature verification is unconditional in production (not gated on env var presence)
+- [x] Startup fails in production if `CLERK_JWKS_URL` or `CLERK_JWT_ISSUER` are empty
+- [x] Startup fails in production if `poc_mode=True`
+- [x] Admin import requires email allowlist check, not only shared secret
+- [x] `parquet_path` validated against allowed pattern before subprocess call
 
 ### Auth and Authorization
-- [ ] Clerk JWKS cache has TTL (≤ 1 hour)
-- [ ] User cache has TTL and max size (LRU eviction)
+- [x] Clerk JWKS cache has TTL (≤ 1 hour)
+- [x] User cache has TTL and max size (LRU eviction)
 - [ ] Cross-user access negative tests pass for all owned resources
 - [ ] `CLERK_AUDIENCE` and `CLERK_AUTHORIZED_PARTY` set in production env
 
 ### API and Infrastructure
-- [ ] Rate limiting active on saved-leads, notes, export, and admin import
-- [ ] Security headers configured on backend and Cloudflare Pages
+- [x] Rate limiting active on saved-leads, notes, export, and admin import
+- [x] Security headers configured on backend and Cloudflare Pages
 - [ ] CSP enforced (not report-only) with no violations from normal use
-- [ ] Request body size limit middleware active
+- [x] Request body size limit middleware active
 
 ### Secrets and Supply Chain
 - [ ] Secret scanning active in CI; no hardcoded secrets found in repo

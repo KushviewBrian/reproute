@@ -9,6 +9,7 @@ from app.db.session import get_db
 from app.models.note import Note
 from app.models.user import User
 from app.schemas.note import CreateNoteRequest, NoteItem, UpdateNoteRequest
+from app.utils.rate_limit import enforce_rate_limit
 
 router = APIRouter()
 
@@ -19,6 +20,7 @@ async def create_note(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> NoteItem:
+    await enforce_rate_limit(f"rl:notes_create:{user.id}", limit=120, window_seconds=3600)
     note = Note(
         user_id=user.id,
         business_id=payload.business_id,
