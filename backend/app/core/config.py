@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -28,10 +29,32 @@ class Settings(BaseSettings):
     route_cache_ttl_seconds: int = 86400
     ingest_database_url: str = ""
     admin_import_secret: str = ""
+    admin_allowed_emails: str = ""
+    admin_import_allowed_roots: str = ""
+    validation_hmac_secret: str = ""
 
     cors_allow_origins: str = "http://localhost:5173"
     poc_mode: bool = False
     poc_user_email: str = "poc@local.dev"
+
+    def is_production(self) -> bool:
+        return self.environment.strip().lower() == "production"
+
+    def should_verify_jwt_signature(self) -> bool:
+        return self.environment.strip().lower() not in {"development", "test"}
+
+    def admin_allowed_email_set(self) -> set[str]:
+        raw = [value.strip().lower() for value in self.admin_allowed_emails.split(",")]
+        return {value for value in raw if value}
+
+    def admin_import_allowed_root_paths(self) -> list[Path]:
+        raw = [value.strip() for value in self.admin_import_allowed_roots.split(",")]
+        paths: list[Path] = []
+        for value in raw:
+            if not value:
+                continue
+            paths.append(Path(value).expanduser().resolve())
+        return paths
 
 
 @lru_cache

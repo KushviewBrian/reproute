@@ -1,0 +1,11 @@
+Phase 1 EXPLAIN ANALYZE artifact placeholder
+Date: 2026-04-17
+Command:
+python scripts/explain_candidate_query.py \
+  --database-url "$INGEST_DATABASE_URL" \
+  --route-id "<route_uuid>" \
+  --corridor-width-meters 1609 \
+  --output docs/evidence/phase1_explain_route_<route_uuid>.txt
+
+Status: Pending execution in an environment with seeded route data.
+Reason: local environment currently lacks DB/service runtime.

@@ -2,6 +2,12 @@
 
 This runbook captures repeatable checks for the remaining evidence-heavy items in Phases 1-4.
 
+## Latest Evidence Snapshot (2026-04-17)
+
+- Ingestion QA artifact: `docs/evidence/phase1_ingest_qa_2026-04-17.md`
+- EXPLAIN ANALYZE artifact placeholder: `docs/evidence/phase1_explain_route_pending_2026-04-17.txt`
+- Route IDs and p95 timing: pending capture when connected to seeded Postgres and live API runtime.
+
 ## 1) Spatial index evidence (`EXPLAIN ANALYZE`)
 
 Run:
@@ -77,4 +83,3 @@ Expected:
   - note preview visible
   - cached fallback works offline
 - Export CSV works for current route and `saved_only=true`.
-

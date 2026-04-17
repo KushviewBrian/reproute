@@ -1,6 +1,6 @@
 # RepRoute Master Roadmap
 
-Updated: April 16, 2026
+Updated: April 17, 2026
 
 ## Purpose
 
@@ -36,26 +36,27 @@ RepRoute is a route-aware field sales prospecting platform for B2B reps. Insuran
 - Classification and scoring (rule-based, insurance-tuned)
 - Discovery UI: route, list/map, detail, saved views
 - Save lead, status changes, notes, per-route CSV export
+- Today dashboard (initial), follow-up date fields (initial), and cross-route saved-leads CSV export
 - PWA shell: manifest + service worker + icons
-- Offline note queue (localStorage-backed; notes only)
+- Offline queue for notes and status changes (localStorage-backed)
 - Ingestion scripts (`scripts/ingest_overture.py`) and scoring validation scripts
+- Phase 5 schema foundations: validation/expansion tables and migrations
 
 ### Confirmed by recent checks
 
 - Backend compile check passes (`python3 -m compileall backend/app scripts`)
 - Frontend build passes (`npm run build`)
+- Frontend typecheck passes (`npm run typecheck`)
 - Manual prototype flow verified: fetch, save, note, saved view rendering
 
 ### Confirmed open gaps (must close before pilot)
 
-- Security P0 controls are not closed (see Phase 2)
+- Security P0 code is implemented but not yet fully verified/closed (see Phase 2)
 - Lead validation system not implemented (see Phase 5)
 - Dataset enrichment not implemented (see Phase 6)
-- Offline status change queue not implemented (see Phase 4)
-- Today dashboard and onboarding not implemented (see Phase 4)
-- Follow-up date fields not implemented (see Phase 4)
-- Cross-route export and CRM-format export not implemented (see Phase 4)
-- Score explanation UI is incomplete (see Phase 3)
+- Deduplication baseline is not implemented (see Phase 4)
+- Onboarding overlay is not implemented (see Phase 4)
+- Score explanation tooltip and evidence calibration are incomplete (see Phase 3)
 - Evidence capture for ingestion QA and scoring validation is incomplete (see Phase 1)
 
 ---
@@ -102,7 +103,7 @@ Lock current architecture, environments, and dev workflow. Ensure any developer 
 
 ### Phase 1 — Data and Routing Foundation Evidence
 
-**Status: Mostly implemented; evidence capture incomplete**
+**Status: Mostly implemented; stale-record handling complete; real evidence capture incomplete**
 
 **Scope:**
 The route geometry, corridor query, and Overture ingestion pipeline are implemented. This phase captures the QA evidence needed to proceed with confidence, and adds the stale-record handling gap identified in `datasetexpansion.md`.
@@ -129,7 +130,7 @@ The route geometry, corridor query, and Overture ingestion pipeline are implemen
 
 ### Phase 2 — Security Lockdown (MVP Critical)
 
-**Status: Not complete — highest priority gap**
+**Status: In progress — P0 code landed, verification + sign-off incomplete**
 
 This is the highest-risk open work. All P0 items must close before pilot traffic. Security work that is backend-only can be parallelized against Phase 3 frontend work.
 
@@ -184,7 +185,7 @@ Close all P0 security risks. Establish baseline hardening across auth, data acce
 
 ### Phase 3 — Classification, Scoring, and Score Explanation
 
-**Status: Implemented; UI explanation incomplete; calibration evidence missing**
+**Status: In progress — explanation text largely implemented; tooltip + calibration evidence missing**
 
 **Scope:**
 Validate scoring quality on real data and complete the score explanation display in the UI. Vertical profiles are documented but the config path is deferred — do not build a multi-profile config system for MVP.
@@ -215,7 +216,7 @@ Validate scoring quality on real data and complete the score explanation display
 
 ### Phase 4 — Core Discovery UX, Workflow Completion, and Missing MVP Features
 
-**Status: Partially implemented — multiple specific gaps**
+**Status: In progress — backend foundations and core UX landed; remaining feature/test gaps open**
 
 **Scope:**
 Complete all remaining MVP-required UI and workflow features. This is the largest remaining build phase before validation is layered on. Work within this phase can be parallelized across frontend and backend tracks.
@@ -268,7 +269,7 @@ Complete all remaining MVP-required UI and workflow features. This is the larges
 
 ### Phase 5 — Lead Validation System
 
-**Status: Not started**
+**Status: Started — schema layer implemented, runtime validation system not started**
 
 **Scope:**
 Implement the selective confidence-based validation system per `docs/leadvalidationplan.md`. This is a core trust signal for MVP — the system must be live before pilot.
@@ -569,10 +570,10 @@ MVP is complete when all are true:
 |---|---|---|---|
 | 0 | Baseline reliability | In progress | Medium |
 | 1 | Data/routing foundation evidence | Mostly done | Medium |
-| 2 | Security lockdown | Not complete | Low — highest priority gap |
-| 3 | Scoring + score explanation | Mostly done | Medium |
-| 4 | Discovery UX + workflow completion | Partially built | Low |
-| 5 | Lead validation system | Not started | Low |
+| 2 | Security lockdown | In progress (P0 code landed) | Medium |
+| 3 | Scoring + score explanation | In progress | Medium |
+| 4 | Discovery UX + workflow completion | In progress | Medium |
+| 5 | Lead validation system | Started (schema only) | Medium |
 | 6 | Dataset expansion | Not started | Low |
 | 7 | Operations hardening | Partial | Low |
 | 8 | MVP verification and QA | Not started | Low |
@@ -582,11 +583,11 @@ MVP is complete when all are true:
 
 ## Immediate Next Sprint (Recommended)
 
-1. **Close Phase 2 P0 items** — TLS (P0-1), JWT (P0-2), admin hardening (P0-3), poc_mode guard (P0-4). These block everything downstream. Start immediately.
-2. **Capture Phase 1 evidence** — one ingestion QA artifact + one `EXPLAIN ANALYZE` trace committed to the evidence log. Can run in parallel with Phase 2.
-3. **Complete score explanation UI (Phase 3)** — plain-language labels in lead detail; this unblocks the validation badge placement in Phase 5.
-4. **Schema migrations for Phase 4** — `next_follow_up_at`, `last_contact_attempt_at` on `saved_lead`. Keep dedup as query-time suppression only for MVP.
-5. **Begin Phase 5 validation schema** — `lead_validation_run`, `lead_field_validation`, `lead_expansion_candidate` migrations. Schema-only; no compute until Phase 2 P0 is closed.
+1. **Verify and close Phase 2 P0 formally** — run security regression tests, production startup config validation, and update `securityplan.md` with commit-linked closure evidence.
+2. **Replace Phase 1 placeholder evidence with real artifacts** — run one ingestion QA pass and one real `EXPLAIN ANALYZE` trace on seeded metro data; commit results to `docs/evidence/` + `docs/PHASE1_4_VALIDATION.md`.
+3. **Finish Phase 3 remaining items** — add one-time score explanation tooltip and commit 5-route scoring validation evidence (including `Other/Unknown` rate).
+4. **Finish Phase 4 remaining items** — implement dedup suppression baseline, onboarding overlay, and complete end-to-end offline/reconnect verification for status+notes.
+5. **Start Phase 5 runtime work** — keep schema as-is, then implement validation APIs/queue/worker orchestration only after Phase 2 P0 is signed off.
 
 ---
 

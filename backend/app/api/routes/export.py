@@ -11,6 +11,7 @@ from app.core.auth import get_current_user
 from app.db.session import get_db
 from app.models.note import Note
 from app.models.route import Route
+from app.models.business import Business
 from app.models.saved_lead import SavedLead
 from app.models.user import User
 from app.services.lead_service import fetch_leads
@@ -74,4 +75,84 @@ async def export_route_leads_csv(
 
     output.seek(0)
     headers = {"Content-Disposition": f'attachment; filename="route_{route_id}_leads.csv"'}
+    return StreamingResponse(iter([output.getvalue()]), media_type="text/csv", headers=headers)
+
+
+@router.get("/saved-leads.csv")
+async def export_saved_leads_csv(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> StreamingResponse:
+    saved_rows = (
+        await db.execute(
+            select(
+                SavedLead,
+                Business.name,
+                Business.phone,
+                Business.address_line1,
+                Business.city,
+                Business.state,
+                Business.postal_code,
+                Business.external_source,
+            )
+            .join(Business, Business.id == SavedLead.business_id, isouter=True)
+            .where(SavedLead.user_id == user.id)
+            .order_by(SavedLead.created_at.desc())
+        )
+    ).all()
+
+    business_ids = [row.SavedLead.business_id for row in saved_rows]
+    note_rows = []
+    if business_ids:
+        note_rows = (
+            await db.execute(
+                select(Note.business_id, Note.note_text)
+                .where(Note.user_id == user.id, Note.business_id.in_(business_ids))
+                .order_by(Note.business_id, Note.created_at.desc())
+            )
+        ).all()
+
+    notes_by_business: dict[UUID, list[str]] = {}
+    for business_id, note_text in note_rows:
+        notes_by_business.setdefault(business_id, []).append(note_text)
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(
+        [
+            "first_name",
+            "last_name",
+            "company",
+            "phone",
+            "email",
+            "address",
+            "city",
+            "state",
+            "zip",
+            "source",
+            "status",
+            "notes",
+        ]
+    )
+    for row in saved_rows:
+        notes = "; ".join(notes_by_business.get(row.SavedLead.business_id, []))
+        writer.writerow(
+            [
+                "",
+                "",
+                row.name or "",
+                row.phone or "",
+                "",
+                row.address_line1 or "",
+                row.city or "",
+                row.state or "",
+                row.postal_code or "",
+                row.external_source or "",
+                row.SavedLead.status,
+                notes,
+            ]
+        )
+
+    output.seek(0)
+    headers = {"Content-Disposition": 'attachment; filename="saved_leads_export.csv"'}
     return StreamingResponse(iter([output.getvalue()]), media_type="text/csv", headers=headers)

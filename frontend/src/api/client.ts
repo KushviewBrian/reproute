@@ -81,6 +81,8 @@ export type SavedLead = {
   business_id: string;
   status: string;
   priority: number;
+  next_follow_up_at?: string | null;
+  last_contact_attempt_at?: string | null;
   business_name: string | null;
   phone: string | null;
   address: string | null;
@@ -88,6 +90,17 @@ export type SavedLead = {
   final_score?: number | null;
   latest_note_text?: string | null;
   latest_note_created_at?: string | null;
+};
+
+export type SavedLeadsTodayResponse = {
+  overdue: SavedLead[];
+  due_today: SavedLead[];
+  high_priority_untouched: SavedLead[];
+  recent_route: {
+    route_id: string;
+    label: string;
+    unsaved_lead_count: number;
+  } | null;
 };
 
 export type Note = {
@@ -146,16 +159,27 @@ export async function reverseGeocode(lat: number, lng: number, token?: string) {
   );
 }
 
-export async function listSavedLeads(token?: string, status?: string) {
-  const q = status ? `?status=${encodeURIComponent(status)}` : "";
+export async function listSavedLeads(token?: string, status?: string, dueBefore?: string) {
+  const params = new URLSearchParams();
+  if (status) params.set("status", status);
+  if (dueBefore) params.set("due_before", dueBefore);
+  const q = params.toString() ? `?${params.toString()}` : "";
   return req<SavedLead[]>(`/saved-leads${q}`, {}, token);
+}
+
+export async function getSavedLeadsToday(token?: string) {
+  return req<SavedLeadsTodayResponse>("/saved-leads/today", {}, token);
 }
 
 export async function saveLead(payload: { business_id: string; route_id?: string | null }, token?: string) {
   return req<SavedLead>("/saved-leads", { method: "POST", body: JSON.stringify(payload) }, token);
 }
 
-export async function updateSavedLead(id: string, payload: { status?: string; priority?: number }, token?: string) {
+export async function updateSavedLead(
+  id: string,
+  payload: { status?: string; priority?: number; next_follow_up_at?: string | null; last_contact_attempt_at?: string | null },
+  token?: string,
+) {
   return req<SavedLead>(`/saved-leads/${id}`, { method: "PATCH", body: JSON.stringify(payload) }, token);
 }
 
@@ -194,6 +218,23 @@ export async function downloadRouteCsv(routeId: string, token?: string, savedOnl
   const a = document.createElement("a");
   a.href = href;
   a.download = `route_${routeId}_leads.csv`;
+  a.click();
+  URL.revokeObjectURL(href);
+}
+
+export async function downloadSavedLeadsCsv(token?: string): Promise<void> {
+  const headers: Record<string, string> = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const resp = await fetch(`${API_BASE}/export/saved-leads.csv`, { headers });
+  if (!resp.ok) {
+    const body = await resp.text();
+    throw new Error(`${resp.status}: ${body}`);
+  }
+  const blob = await resp.blob();
+  const href = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = href;
+  a.download = "saved_leads_export.csv";
   a.click();
   URL.revokeObjectURL(href);
 }

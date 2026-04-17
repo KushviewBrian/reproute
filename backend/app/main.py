@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.router import api_router
 from app.core.config import get_settings
+from app.db.session import is_db_tls_config_secure
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -28,6 +29,17 @@ app.add_middleware(
 async def startup():
     logger.info("=== Reproute API starting up ===")
     s = get_settings()
+    if s.is_production() and s.poc_mode:
+        logger.critical("Refusing startup: POC_MODE must be false in production")
+        raise RuntimeError("Invalid startup config: POC_MODE=true in production")
+    if s.is_production() and not is_db_tls_config_secure():
+        logger.critical("Refusing startup: insecure DB TLS settings")
+        raise RuntimeError("Invalid startup config: insecure DB TLS settings")
+    if s.is_production():
+        if not s.clerk_jwks_url.strip():
+            raise RuntimeError("Invalid startup config: CLERK_JWKS_URL is required in production")
+        if not s.clerk_jwt_issuer.strip():
+            raise RuntimeError("Invalid startup config: CLERK_JWT_ISSUER is required in production")
     logger.info("environment=%s poc_mode=%s", s.environment, s.poc_mode)
     logger.info("database_configured=%s", bool(s.database_url))
     logger.info("redis_configured=%s", bool(s.redis_url))

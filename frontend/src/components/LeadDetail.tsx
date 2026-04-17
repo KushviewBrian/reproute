@@ -1,7 +1,13 @@
 import { useEffect, useState } from "react";
 
 import { createNote, listNotes, saveLead, type Lead, updateSavedLead } from "../api/client";
-import { enqueueNote, flushQueuedNotes, getQueuedCount } from "../lib/offlineQueue";
+import {
+  enqueueNote,
+  enqueueStatusChange,
+  flushQueuedNotes,
+  flushQueuedStatusChanges,
+  getQueuedCount,
+} from "../lib/offlineQueue";
 
 type Props = {
   lead: Lead | null;
@@ -98,8 +104,11 @@ export function LeadDetail({ lead, routeId, token, onClose }: Props) {
   useEffect(() => {
     async function flushWhenOnline() {
       if (!navigator.onLine || !token) return;
-      const flushed = await flushQueuedNotes(token);
-      if (flushed.length > 0 && lead) {
+      const [flushedNotes] = await Promise.all([
+        flushQueuedNotes(token),
+        flushQueuedStatusChanges(token),
+      ]);
+      if (flushedNotes.length > 0 && lead) {
         const latest = await listNotes(lead.business_id, token).catch(() => []);
         setNotes(latest);
       }
@@ -113,20 +122,41 @@ export function LeadDetail({ lead, routeId, token, onClose }: Props) {
   if (!lead) return null;
 
   async function saveWithStatus() {
+    if (!lead) return;
     setSaving(true);
     try {
-      const saved = await saveLead({ business_id: lead!.business_id, route_id: routeId ?? undefined }, token);
-      await updateSavedLead(saved.id, { status }, token);
+      const nowIso = new Date().toISOString();
+      const shouldSetContactAttempt = status !== "saved";
+      if (!navigator.onLine || !token) {
+        enqueueStatusChange({
+          business_id: lead.business_id,
+          route_id: routeId,
+          status,
+          last_contact_attempt_at: shouldSetContactAttempt ? nowIso : undefined,
+        });
+        setQueueCount(getQueuedCount());
+        return;
+      }
+      const saved = await saveLead({ business_id: lead.business_id, route_id: routeId ?? undefined }, token);
+      await updateSavedLead(
+        saved.id,
+        {
+          status,
+          last_contact_attempt_at: shouldSetContactAttempt ? nowIso : undefined,
+        },
+        token,
+      );
     } finally {
       setSaving(false);
     }
   }
 
   async function addNote() {
+    if (!lead) return;
     if (!noteText.trim()) return;
     if (!navigator.onLine || !token) {
       enqueueNote({
-        business_id: lead!.business_id,
+        business_id: lead.business_id,
         route_id: routeId,
         note_text: noteText,
         outcome_status: noteOutcome,
@@ -149,7 +179,7 @@ export function LeadDetail({ lead, routeId, token, onClose }: Props) {
     }
     const created = await createNote(
       {
-        business_id: lead!.business_id,
+        business_id: lead.business_id,
         route_id: routeId,
         note_text: noteText,
         outcome_status: noteOutcome,
@@ -194,6 +224,9 @@ export function LeadDetail({ lead, routeId, token, onClose }: Props) {
         {/* Contact info */}
         <div className="detail-section">
           <p className="detail-section-title">Contact</p>
+          <p style={{ fontSize: "0.72rem", color: "var(--gray-500)", marginBottom: "0.25rem" }}>
+            Contact availability: {lead.phone ? "Phone found" : "Phone missing"} · {lead.website ? "Website found" : "Website missing"}
+          </p>
           {lead.address && (
             <div className="detail-info-row">
               <IconMapPin />
@@ -228,6 +261,9 @@ export function LeadDetail({ lead, routeId, token, onClose }: Props) {
         {/* Score breakdown */}
         <div className="detail-section">
           <p className="detail-section-title">Score breakdown</p>
+          <p style={{ fontSize: "0.72rem", color: "var(--gray-500)", marginBottom: "0.25rem" }}>
+            Confidence status: Unchecked
+          </p>
           <div className="score-breakdown">
             <div className="score-mini">
               <div className="score-mini-label">Fit</div>
@@ -243,7 +279,7 @@ export function LeadDetail({ lead, routeId, token, onClose }: Props) {
             </div>
           </div>
           <p style={{ fontSize: "0.7rem", color: "var(--gray-500)", lineHeight: 1.5, marginTop: "0.25rem" }}>
-            {lead.explanation.fit} · {lead.explanation.distance} · {lead.explanation.actionability}
+            Why it ranked: {lead.explanation.fit} · {lead.explanation.distance} · {lead.explanation.actionability}
           </p>
         </div>
 
@@ -279,7 +315,7 @@ export function LeadDetail({ lead, routeId, token, onClose }: Props) {
           {queueCount > 0 && (
             <div className="offline-banner">
               <IconWifi />
-              {queueCount} note{queueCount > 1 ? "s" : ""} queued — will sync when online
+              {queueCount} unsynced change{queueCount > 1 ? "s" : ""} queued — will sync when online
             </div>
           )}
 

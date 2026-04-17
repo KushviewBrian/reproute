@@ -7,18 +7,22 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 _engine = None
 _SessionLocal = None
+_ssl_is_secure = True
 
 
 def _get_engine():
-    global _engine, _SessionLocal
+    global _engine, _SessionLocal, _ssl_is_secure
     if _engine is None:
         from app.core.config import get_settings
         settings = get_settings()
         # statement_cache_size=0 required for Supabase pgbouncer pooler
         import ssl
         ssl_ctx = ssl.create_default_context()
-        ssl_ctx.check_hostname = False
-        ssl_ctx.verify_mode = ssl.CERT_NONE
+        ssl_ctx.check_hostname = True
+        ssl_ctx.verify_mode = ssl.CERT_REQUIRED
+        _ssl_is_secure = (
+            ssl_ctx.check_hostname is True and ssl_ctx.verify_mode == ssl.CERT_REQUIRED
+        )
         connect_args = {"timeout": 10, "command_timeout": 10, "ssl": ssl_ctx, "statement_cache_size": 0, "prepared_statement_cache_size": 0}
         _engine = create_async_engine(
             settings.database_url,
@@ -37,6 +41,11 @@ def _get_engine():
 def get_engine():
     e, _ = _get_engine()
     return e
+
+
+def is_db_tls_config_secure() -> bool:
+    _get_engine()
+    return _ssl_is_secure
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:

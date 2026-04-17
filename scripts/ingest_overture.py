@@ -196,8 +196,27 @@ def upsert_batch(engine, rows: list[dict]) -> None:
         conn.execute(sql, rows)
 
 
+def mark_stale_overture_records(engine, refresh_started_at: datetime) -> int:
+    sql = text(
+        """
+        UPDATE business
+        SET
+          operating_status = 'possibly_closed',
+          updated_at = now()
+        WHERE external_source = 'overture'
+          AND last_seen_at IS NOT NULL
+          AND last_seen_at < :refresh_started_at
+          AND COALESCE(operating_status, '') <> 'possibly_closed'
+        """
+    )
+    with engine.begin() as conn:
+        result = conn.execute(sql, {"refresh_started_at": refresh_started_at})
+    return int(result.rowcount or 0)
+
+
 def main() -> None:
     args = parse_args()
+    refresh_started_at = datetime.now(timezone.utc)
     parquet_path = args.parquet or _download_by_bbox(args.bbox, args.label)
     print(f"loading parquet={parquet_path}")
 
@@ -258,6 +277,7 @@ def main() -> None:
     if batch:
         upsert_batch(engine, batch)
         upserted += len(batch)
+    stale_marked = mark_stale_overture_records(engine, refresh_started_at)
 
     def pct(value: int) -> float:
         if processed == 0:
@@ -273,7 +293,8 @@ def main() -> None:
         f"with_phone_rate={pct(with_phone)}% "
         f"with_website_rate={pct(with_website)}% "
         f"open_rate={pct(status_open)}% "
-        f"permanently_closed_rate={pct(permanently_closed)}%"
+        f"permanently_closed_rate={pct(permanently_closed)}% "
+        f"stale_marked={stale_marked}"
     )
 
 

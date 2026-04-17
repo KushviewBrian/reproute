@@ -1,6 +1,14 @@
 import { useEffect, useState } from "react";
 
-import { deleteSavedLead, downloadRouteCsv, listNotes, listSavedLeads, type SavedLead } from "../api/client";
+import {
+  deleteSavedLead,
+  downloadRouteCsv,
+  downloadSavedLeadsCsv,
+  listNotes,
+  listSavedLeads,
+  type SavedLead,
+  updateSavedLead,
+} from "../api/client";
 import { cacheSavedLeads, readCachedSavedLeads } from "../lib/savedLeadCache";
 
 type Props = {
@@ -51,7 +59,16 @@ const STATUS_PRIORITY: Record<string, number> = {
 };
 
 function sortSavedLeads(items: SavedLead[]): SavedLead[] {
+  const now = Date.now();
   return [...items].sort((a, b) => {
+    const aDue = a.next_follow_up_at ? new Date(a.next_follow_up_at).getTime() : null;
+    const bDue = b.next_follow_up_at ? new Date(b.next_follow_up_at).getTime() : null;
+    const aOverdue = aDue != null && aDue < now;
+    const bOverdue = bDue != null && bDue < now;
+    if (aOverdue !== bOverdue) return aOverdue ? -1 : 1;
+    if (aDue != null && bDue != null && aDue !== bDue) return aDue - bDue;
+    if (aDue != null && bDue == null) return -1;
+    if (aDue == null && bDue != null) return 1;
     const pa = STATUS_PRIORITY[a.status] ?? 99;
     const pb = STATUS_PRIORITY[b.status] ?? 99;
     if (pa !== pb) return pa - pb;
@@ -66,6 +83,7 @@ export function SavedLeads({ token, currentRouteId, onAddToRoute, onCountChange 
   const [items, setItems] = useState<SavedLead[]>([]);
   const [status, setStatus] = useState<string>("");
   const [exporting, setExporting] = useState(false);
+  const [exportingAll, setExportingAll] = useState(false);
   const [cacheMeta, setCacheMeta] = useState<string | null>(null);
 
   useEffect(() => {
@@ -147,21 +165,46 @@ export function SavedLeads({ token, currentRouteId, onAddToRoute, onCountChange 
     }
   }
 
+  async function handleExportAll() {
+    setExportingAll(true);
+    try {
+      await downloadSavedLeadsCsv(token);
+    } finally {
+      setExportingAll(false);
+    }
+  }
+
+  async function handleFollowUpChange(id: string, value: string) {
+    const iso = value ? `${value}T12:00:00Z` : null;
+    const updated = await updateSavedLead(id, { next_follow_up_at: iso }, token);
+    setItems((prev) => {
+      const next = sortSavedLeads(prev.map((it) => (it.id === id ? { ...it, next_follow_up_at: updated.next_follow_up_at } : it)));
+      cacheSavedLeads(status, next);
+      return next;
+    });
+  }
+
   return (
     <>
       <div className="saved-header">
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <h2>Saved Leads</h2>
-          {currentRouteId && (
-            <button
-              className="btn btn-ghost btn-sm"
-              onClick={handleExport}
-              disabled={exporting}
-            >
+          <div style={{ display: "flex", gap: "0.35rem" }}>
+            <button className="btn btn-ghost btn-sm" onClick={handleExportAll} disabled={exportingAll}>
               <IconDownload />
-              {exporting ? "Exporting..." : "Export CSV"}
+              {exportingAll ? "Exporting..." : "Export All CSV"}
             </button>
-          )}
+            {currentRouteId && (
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={handleExport}
+                disabled={exporting}
+              >
+                <IconDownload />
+                {exporting ? "Exporting..." : "Export Route CSV"}
+              </button>
+            )}
+          </div>
         </div>
 
         <select
@@ -205,6 +248,21 @@ export function SavedLeads({ token, currentRouteId, onAddToRoute, onCountChange 
               {it.route_label && (
                 <p style={{ fontSize: "0.68rem", color: "var(--gray-400)", margin: "0.15rem 0 0" }}>
                   Route: {it.route_label}
+                </p>
+              )}
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "0.35rem" }}>
+                <label style={{ fontSize: "0.7rem", color: "var(--gray-500)" }}>Follow-up:</label>
+                <input
+                  type="date"
+                  className="form-input"
+                  style={{ maxWidth: "11rem", fontSize: "0.72rem", padding: "0.3rem 0.45rem" }}
+                  value={it.next_follow_up_at ? new Date(it.next_follow_up_at).toISOString().slice(0, 10) : ""}
+                  onChange={(e) => void handleFollowUpChange(it.id, e.target.value)}
+                />
+              </div>
+              {it.next_follow_up_at && new Date(it.next_follow_up_at).getTime() < Date.now() && (
+                <p style={{ fontSize: "0.68rem", color: "#b42318", margin: "0.18rem 0 0" }}>
+                  Overdue follow-up
                 </p>
               )}
               {it.phone && (

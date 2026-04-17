@@ -17,5 +17,7 @@ class SavedLead(Base):
     business_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("business.id"), nullable=False)
     status: Mapped[str] = mapped_column(String, default="saved")
     priority: Mapped[int] = mapped_column(SmallInteger, default=0)
+    next_follow_up_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True))
+    last_contact_attempt_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

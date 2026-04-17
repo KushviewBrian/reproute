@@ -1,4 +1,4 @@
-import { createNote, type Note } from "../api/client";
+import { createNote, saveLead, updateSavedLead, type Note, type SavedLead } from "../api/client";
 
 type QueuedNote = {
   business_id: string;
@@ -10,6 +10,16 @@ type QueuedNote = {
 };
 
 const KEY = "reproute_offline_note_queue_v1";
+const STATUS_KEY = "reproute_offline_status_queue_v1";
+
+type QueuedStatusChange = {
+  business_id: string;
+  route_id?: string | null;
+  status: string;
+  next_follow_up_at?: string | null;
+  last_contact_attempt_at?: string | null;
+  queued_at: string;
+};
 
 function readQueue(): QueuedNote[] {
   try {
@@ -26,6 +36,21 @@ function writeQueue(queue: QueuedNote[]): void {
   localStorage.setItem(KEY, JSON.stringify(queue));
 }
 
+function readStatusQueue(): QueuedStatusChange[] {
+  try {
+    const raw = localStorage.getItem(STATUS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeStatusQueue(queue: QueuedStatusChange[]): void {
+  localStorage.setItem(STATUS_KEY, JSON.stringify(queue));
+}
+
 export function enqueueNote(item: Omit<QueuedNote, "queued_at">): void {
   const queue = readQueue();
   queue.push({ ...item, queued_at: new Date().toISOString() });
@@ -33,7 +58,7 @@ export function enqueueNote(item: Omit<QueuedNote, "queued_at">): void {
 }
 
 export function getQueuedCount(): number {
-  return readQueue().length;
+  return readQueue().length + readStatusQueue().length;
 }
 
 export async function flushQueuedNotes(token?: string): Promise<Note[]> {
@@ -62,5 +87,42 @@ export async function flushQueuedNotes(token?: string): Promise<Note[]> {
   }
 
   writeQueue(remaining);
+  return applied;
+}
+
+export function enqueueStatusChange(item: Omit<QueuedStatusChange, "queued_at">): void {
+  const queue = readStatusQueue();
+  queue.push({ ...item, queued_at: new Date().toISOString() });
+  writeStatusQueue(queue);
+}
+
+export async function flushQueuedStatusChanges(token?: string): Promise<SavedLead[]> {
+  const queue = readStatusQueue();
+  if (!queue.length || !token) return [];
+
+  const applied: SavedLead[] = [];
+  const remaining: QueuedStatusChange[] = [];
+
+  for (const item of queue) {
+    try {
+      const saved = await saveLead(
+        { business_id: item.business_id, route_id: item.route_id },
+        token,
+      );
+      const updated = await updateSavedLead(
+        saved.id,
+        {
+          status: item.status,
+          next_follow_up_at: item.next_follow_up_at,
+          last_contact_attempt_at: item.last_contact_attempt_at,
+        },
+        token,
+      );
+      applied.push(updated);
+    } catch {
+      remaining.push(item);
+    }
+  }
+  writeStatusQueue(remaining);
   return applied;
 }

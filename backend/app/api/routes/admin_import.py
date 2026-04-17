@@ -7,6 +7,7 @@ from pathlib import Path
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, status
+from sqlalchemy import func, select
 
 from app.core.auth import get_current_user
 from app.core.config import get_settings
@@ -25,8 +26,47 @@ def _require_admin_secret(admin_secret: str | None) -> None:
         if admin_secret != configured:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid admin secret")
         return
-    if settings.environment == "production":
+    if settings.is_production():
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Admin import disabled")
+
+
+def _require_admin_email(user: User) -> None:
+    settings = get_settings()
+    allowlist = settings.admin_allowed_email_set()
+    user_email = (user.email or "").strip().lower()
+    if settings.is_production() and not allowlist:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Admin allowlist not configured",
+        )
+    if allowlist and user_email not in allowlist:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is not an admin")
+
+
+def _validate_parquet_path(parquet_path: str) -> str:
+    settings = get_settings()
+    candidate = Path(parquet_path).expanduser().resolve()
+    roots = settings.admin_import_allowed_root_paths()
+    if settings.is_production() and not roots:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Admin import roots not configured",
+        )
+    if roots:
+        allowed = False
+        for root in roots:
+            try:
+                candidate.relative_to(root)
+                allowed = True
+                break
+            except ValueError:
+                continue
+        if not allowed:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Parquet path is outside allowed import roots",
+            )
+    return str(candidate)
 
 
 def _sync_database_url(payload_db_url: str | None) -> str:
@@ -144,14 +184,26 @@ async def start_overture_import(
     admin_secret: str | None = Header(default=None, alias="X-Admin-Secret"),
 ) -> ImportJobItem:
     _require_admin_secret(admin_secret)
+    _require_admin_email(user)
+    resolved_parquet_path = _validate_parquet_path(payload.parquet_path)
 
     db_url = _sync_database_url(payload.database_url)
     _, session_local = _get_engine()
     async with session_local() as db:
+        running_count = await db.scalar(
+            select(func.count())
+            .select_from(ImportJob)
+            .where(ImportJob.status.in_(("queued", "running")))
+        )
+        if int(running_count or 0) > 0:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Another import job is already running",
+            )
         job = ImportJob(
             user_id=user.id,
             source_type="overture_parquet",
-            parquet_path=payload.parquet_path,
+            parquet_path=resolved_parquet_path,
             label=payload.label,
             bbox=payload.bbox,
             status="queued",
@@ -160,7 +212,7 @@ async def start_overture_import(
         await db.commit()
         await db.refresh(job)
 
-    background_tasks.add_task(_run_import_job, job.id, payload.parquet_path, db_url)
+    background_tasks.add_task(_run_import_job, job.id, resolved_parquet_path, db_url)
     return ImportJobItem(
         id=job.id,
         user_id=job.user_id,
@@ -185,6 +237,7 @@ async def get_import_job(
     admin_secret: str | None = Header(default=None, alias="X-Admin-Secret"),
 ) -> ImportJobItem:
     _require_admin_secret(admin_secret)
+    _require_admin_email(user)
     _ = user
     _, session_local = _get_engine()
     async with session_local() as db:

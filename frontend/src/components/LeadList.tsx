@@ -92,7 +92,11 @@ export function LeadList({ leads, selectedLead, onSave, onSaveWithNote, onSelect
             </div>
 
             <p className="lead-explanation">
-              {lead.explanation.fit} · {lead.explanation.actionability}
+              Why it ranked: {lead.explanation.fit} · {lead.explanation.distance}
+            </p>
+
+            <p className="lead-explanation" style={{ marginTop: "-0.1rem" }}>
+              Contact data: {lead.phone ? "Phone" : "No phone"} · {lead.website ? "Website" : "No website"} · Confidence: Unchecked
             </p>
 
             <p className="lead-explanation" style={{ marginTop: "-0.1rem" }}>
