@@ -86,6 +86,11 @@ Lock current architecture, environments, and dev workflow. Ensure any developer 
 - CI path covering: backend lint/compile, frontend build, basic smoke checks
 - Rollback instructions documented for Render and Cloudflare Pages deploys
 
+**Test focus:**
+- New/changed: clean-machine bootstrap from docs only (backend start, frontend start, DB connectivity, migrations)
+- Existing regression checks: route creation, lead fetch, save lead, note create/list, per-route export, auth-protected access
+- CI verification: test discovery/import path works on GitHub Actions and local
+
 **Exit criteria:**
 - Fresh machine can run backend, frontend, and end-to-end smoke flow using only committed docs
 - CI consistently runs lint/build/check on every push to `main`
@@ -107,6 +112,11 @@ The route geometry, corridor query, and Overture ingestion pipeline are implemen
 - `EXPLAIN ANALYZE` output for at least one production-like route + corridor query on real data, committed to the evidence log (`docs/PHASE1_4_VALIDATION.md` for now)
 - Stale record detection added to `scripts/ingest_overture.py`: after each full refresh, `UPDATE business SET operating_status = 'possibly_closed' WHERE external_source = 'overture' AND last_seen_at < <refresh_start_time>`
 - Ingestion QA artifact template documented so each monthly refresh produces a consistent report
+
+**Test focus:**
+- New/changed: stale-record update logic in ingestion script (correct rows marked, no false positives on fresh rows)
+- New/changed: ingestion QA report generation and metric completeness
+- Existing regression checks: route corridor query output count/ordering, route creation latency, lead endpoint stability on refreshed data
 
 **Exit criteria:**
 - At least one ingestion run QA artifact committed
@@ -156,6 +166,11 @@ Close all P0 security risks. Establish baseline hardening across auth, data acce
 - Token = HMAC-SHA256(timestamp + secret), 60-second validity window
 - Add `VALIDATION_HMAC_SECRET` to `Settings` and secret stores now so Phase 5 can wire it without a Phase 2 re-open
 
+**Test focus:**
+- New/changed security tests: DB TLS required in production, JWT verification hard-fail when JWKS/issuer misconfigured, `poc_mode=true` startup block in production
+- New/changed authz tests: admin allowlist + path allowlist, HMAC signature validity/expiry checks, extended rate-limit enforcement and body-size limits
+- Existing regression checks: authenticated route/leads/saved/notes/export flows still function for valid users and tokens after security hardening
+
 **Exit criteria:**
 - All P0 items closed and verified (code review + manual test evidence)
 - Security regression tests pass (negative auth + cross-user access tests)
@@ -183,6 +198,11 @@ Validate scoring quality on real data and complete the score explanation display
   3. Confidence in the data (validation state when available, "Unchecked" when not)
 - Sub-scores (fit, distance, actionability) surfaced as plain-language labels, not raw numbers alone
 - Score explanation tooltip: one-time tooltip on first score badge interaction
+
+**Test focus:**
+- New/changed: score explanation rendering on lead list/detail (plain-language text, tooltip behavior, unreadable/empty-state handling)
+- New/changed: scoring validation harness outputs and interpretation logs for 5 routes
+- Existing regression checks: filter-by-score behavior, lead ranking consistency, map/list selection behavior, saved-lead status updates unaffected by score UI changes
 
 **Exit criteria:**
 - Scoring validation run committed to the evidence log for 5 routes
@@ -228,6 +248,11 @@ Complete all remaining MVP-required UI and workflow features. This is the larges
 - iOS install banner: custom "Add to Home Screen" instructions (iOS Safari does not auto-prompt)
 - Route entry UX: error clarity for geocode failures, reverse geocode on current location
 - Error handling: clear states for 401, 429, and network failures on all mutation actions
+
+**Test focus:**
+- New/changed backend tests: follow-up date fields round-trip, `GET /saved-leads/today` section logic, cross-route export format and schema
+- New/changed frontend tests: Today tab sections, follow-up urgency sorting, onboarding and iOS install banner, offline status queue + sync indicator
+- Existing regression checks: current save lead flow, note save/list/edit, existing notes offline queue, route form behavior, per-route export still works
 
 **Exit criteria:**
 - No lead or note data loss in offline → reconnect scenario (verified: airplane mode → changes → reconnect → second device check)
@@ -311,6 +336,11 @@ Labels: 80–100 = Validated; 60–79 = Mostly valid; 40–59 = Needs review; 0�
 - Dedupe key: `SHA256(source_business_id + "|" + normalized_phone_or_address)`
 - Candidates require manual approval; auto-expire `new` status at 90 days
 
+**Test focus:**
+- New/changed validator unit tests: website/phone/hours/address state and confidence outcomes, failure taxonomy (`bot_blocked` => `unknown`)
+- New/changed integration tests: validation queue claim/processing, global/per-user cap enforcement, HMAC-protected `run-due`, retention pruning
+- Existing regression checks: lead retrieval/saving latency and behavior unaffected when validation tables and cron jobs are active
+
 **Exit criteria:**
 - Validation runs succeed on 10+ saved leads within global cap limits; results correct for known test cases
 - `bot_blocked` never produces `invalid` state — verified with a test case
@@ -369,6 +399,11 @@ ALTER TABLE business
 - Restricted to launch metro bbox; confirm license before touching
 - Document in `datasetexpansion.md` §11.4
 
+**Test focus:**
+- New/changed enrichment tests: OSM fetch parsing, quota counters, 30-day freshness skip, stale-record marking on refresh
+- New/changed merge tests: only fill primary phone/website when null; never overwrite stronger existing values
+- Existing regression checks: route creation + lead retrieval latency, score ordering, save/note/export behavior unchanged after enrichment writes
+
 **Exit criteria:**
 - Contact field completeness (`has_phone OR has_website`) improves by ≥ 10% for saved leads after one enrichment pass (measured before and after)
 - Stale record marking runs correctly on a post-refresh test (before/after counts verified)
@@ -397,6 +432,11 @@ Stabilize operations before pilot traffic. Health monitoring, alerting, error ha
 - Backup and restore drill: confirm Supabase backup policy for active plan; run one restore drill; document result
 - Least-privileged DB roles: app role (`SELECT/INSERT/UPDATE/DELETE` on app tables only); migration role separate; verify `service_role` key not exposed anywhere
 - Supabase Data API (PostgREST) verified disabled or restricted for all app tables
+
+**Test focus:**
+- New/changed ops tests: alert trigger simulations (401/403 spike, 5xx spike, admin failures), `/health` uptime alarms, log forwarding integrity
+- New/changed security posture checks: DB role permissions, backup restore drill validation, PostgREST restrictions
+- Existing regression checks: no functional change to user-facing route/lead/save/note/export flows while observability controls are enabled
 
 **Exit criteria:**
 - Critical endpoint p95 latency tracked in monitoring
@@ -428,6 +468,11 @@ Verify all MVP acceptance criteria from `mvpoutline.md` §14 are met before decl
 - No silent failures verified: force-fail API → confirm all error states surface correctly
 - PWA install flow verified on iOS and Android (install prompt after first route, iOS banner)
 - Operational runbook committed: ingestion trigger, quota exhaustion (ORS, Photon, Clerk), backend outage, validation cap reached
+
+**Test focus:**
+- New/changed comprehensive QA: Today view, follow-up dates, validation badges/evidence drawer, cross-route export, onboarding, install flow
+- Existing regression suite: route creation, lead filters, map/list interactions, save/status/note, per-route export, auth session behavior
+- Failure-path testing: offline mode, reconnect sync, upstream routing/geocoding failures, explicit 401/429/network response handling
 
 **Exit criteria — all of the following must be true:**
 1. Full end-to-end flow completable without instructions: route → leads → save → note → follow-up → export
@@ -472,6 +517,11 @@ Run structured pilot sessions with real reps. Measure against KPI targets. Itera
   - First-contact SLA for pilot participants
 - Clerk MAU monitoring: upgrade plan at 80% of free-tier limit (50k MAU); verify current pricing at clerk.com/pricing before budgeting
 - Validation confidence weight calibration plan: after 200+ manual outcomes, compare against automated scores; tune weights in `leadvalidationplan.md` §9
+
+**Test focus:**
+- New/changed pilot instrumentation: KPI events accuracy (save/contact/follow-up timestamps), dashboard/report calculations, calibration dataset quality
+- Existing regression checks under real usage: no data loss, no auth leakage, stable sync across devices, stable export content over repeated sessions
+- Real-world scenario testing: spotty network behavior, long sessions, repeated route generation, high-note-volume accounts
 
 **Exit criteria:**
 - KPI baseline established; pilot targets met or explicit iteration plan approved by Brian

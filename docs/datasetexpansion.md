@@ -182,6 +182,23 @@ Global defaults:
 - `MAX_ENRICHMENTS_PER_USER_PER_DAY = 15`
 - `MAX_ENRICHMENTS_PER_MONTH = 2000`
 
+### 7.1 What this implies for user volume
+
+The caps above are global, so practical capacity depends on how many users are actively enriching on the same day.
+
+- Daily enrichments available to the product: `100`
+- Max per active user per day: `15`
+- Effective daily throughput: `min(100, 15 * active_users_today)`
+
+Interpretation:
+- You can fully satisfy up to `6` heavy users/day at the full 15 enrichments each (`6 * 15 = 90`).
+- A 7th heavy user/day can only consume the remaining `10` enrichments before global daily cap is hit.
+- Monthly throughput (`2000`) equals about `133` user-days at full per-user cap (`2000 / 15`).
+
+Examples:
+- `20` active users/day averaging `5` enrichments each => `100/day` (fits exactly)
+- `40` active users/day averaging `3` enrichments each => `120/day` (needs throttling/queue)
+
 These are driven by:
 - Overpass public endpoint courtesy limits (~500/day comfortable ceiling)
 - Render free-tier CPU headroom for background jobs
@@ -333,7 +350,33 @@ Keep this table updated alongside any new source additions. Re-verify Overture l
 
 ---
 
-## 12) MVP Recommendation
+## 12) Additional Detail Expansion Options (Free vs Paid)
+
+The items below are additional fields/signals that can improve lead quality beyond current MVP scope.
+
+| Detail / Signal | Typical source(s) | Can collect at pilot scale for free? | Validation confidence (MVP) | Notes |
+|---|---|---|---|---|
+| Business email (domain-matched) | Business website (`mailto`, contact page, JSON-LD) | **Yes (conditional)** | Medium | Keep only domain-matched emails by default; avoid generic personal inbox scraping behavior. |
+| Social profile URLs (LinkedIn/Facebook/Instagram/GBP) | Website outbound links, OSM `contact:*`, public business pages | **Yes (conditional)** | Medium | Good corroboration signal; ownership/admin control of page is not guaranteed. |
+| Review/rating snapshot | Public portal/provider datasets where license permits | **Usually no (reliably free at scale)** | Low–Medium | Free access exists in some portals, but terms and API stability vary; treat as optional scoring signal. |
+| Business age / first-seen date | City license start date, state registry formation date, Overture first-seen in your DB | **Yes (conditional)** | Medium–High | Strong stability signal when sourced from government data. |
+| Legal entity name + entity type (LLC/Corp/etc.) | City/state registration datasets | **Yes (conditional)** | Medium–High | Coverage varies by jurisdiction and schema. |
+| Multi-location indicator (chain vs independent) | Shared domain/phone/brand clustering across your dataset | **Yes** | Medium | Can be computed internally without paid APIs. |
+| Decision-maker candidates (owner/officer/agent names) | State business registry, local filings | **Yes (conditional)** | Low–Medium | Often legal entity officers/agents, not true day-to-day business owner. Keep as candidate data with confidence. |
+| Industry depth (NAICS/SIC/subcategory) | Overture/category mapping, city license NAICS fields | **Yes** | Medium–High | High ROI for routing/scoring segmentation. |
+| Operational activity signals (possibly closed, recently updated, active registration) | Overture refresh deltas, city license status updates | **Yes** | Medium | Already aligned with stale detection model in this plan. |
+| Service-area vs storefront flag | Website text hints, category heuristics, address patterns | **Yes** | Low–Medium | Heuristic-only in MVP; do not hard-enforce without manual override. |
+| Parent/branch relationship hints | Shared domain/brand + geo clustering | **Yes** | Medium | Useful for dedup and outreach strategy; treat as probabilistic graph edges. |
+| Contactability quality metrics (per-field confidence + freshness) | Validation system outputs | **Yes** | High (for tracked fields) | Depends on implementing `leadvalidationplan.md` tables/endpoints. |
+
+Implementation guidance:
+- Default to free/open sources first, then add paid providers only where a KPI gap remains after pilot.
+- Keep every non-trivial field tied to provenance (`source`, `last_checked_at`, `confidence`) before using it in ranking.
+- Do not present owner/officer names as ground truth; label as `candidate` unless manually confirmed.
+
+---
+
+## 13) MVP Recommendation
 
 For MVP/pilot, implement only:
 - Overture monthly refresh (already working — add stale detection)
