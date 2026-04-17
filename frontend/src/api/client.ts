@@ -1,4 +1,14 @@
-export const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
+function resolveApiBase(): string {
+  const configured = (import.meta.env.VITE_API_BASE_URL ?? "").trim();
+  if (configured) return configured;
+
+  if (typeof window === "undefined") {
+    return "";
+  }
+  return window.location.origin;
+}
+
+export const API_BASE = resolveApiBase();
 
 async function req<T>(path: string, options: RequestInit = {}, token?: string): Promise<T> {
   const headers: Record<string, string> = {
@@ -13,7 +23,13 @@ async function req<T>(path: string, options: RequestInit = {}, token?: string): 
   try {
     resp = await fetch(`${API_BASE}${path}`, { ...options, headers });
   } catch {
-    throw new Error("Network error: unable to reach API");
+    if (!API_BASE) {
+      throw new Error("Network error: API base URL is not configured. Set VITE_API_BASE_URL.");
+    }
+    if (typeof window !== "undefined" && window.location.protocol === "https:" && API_BASE.startsWith("http://")) {
+      throw new Error(`Network error: API is HTTP on an HTTPS page (${API_BASE}). Set VITE_API_BASE_URL to an HTTPS backend URL.`);
+    }
+    throw new Error(`Network error: unable to reach API at ${API_BASE}`);
   }
 
   if (!resp.ok) {
