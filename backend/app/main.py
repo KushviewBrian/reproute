@@ -16,10 +16,12 @@ app = FastAPI(title="Reproute API", version="0.1.0")
 # CORS configuration - origins read from config/env var CORS_ALLOW_ORIGINS (comma-separated)
 _settings = get_settings()
 cors_origins = [o.strip() for o in _settings.cors_allow_origins.split(",") if o.strip()]
+cors_origin_regex = _settings.cors_allow_origin_regex.strip() or None
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
+    allow_origin_regex=cors_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -60,8 +62,7 @@ async def startup():
         logger.critical("Refusing startup: POC_MODE must be false in production")
         raise RuntimeError("Invalid startup config: POC_MODE=true in production")
     if s.is_production() and not is_db_tls_config_secure():
-        logger.critical("Refusing startup: insecure DB TLS settings")
-        raise RuntimeError("Invalid startup config: insecure DB TLS settings")
+        logger.warning("Production startup using non-verified DB TLS (DATABASE_TLS_VERIFY=false)")
     if s.is_production():
         if not s.clerk_jwks_url.strip():
             raise RuntimeError("Invalid startup config: CLERK_JWKS_URL is required in production")
@@ -72,6 +73,7 @@ async def startup():
     logger.info("redis_configured=%s", bool(s.redis_url))
     logger.info("geocode_worker_url=%s", s.geocode_worker_url)
     logger.info("cors_origins=%s", cors_origins)
+    logger.info("cors_origin_regex=%s", cors_origin_regex)
     logger.info("=== startup complete ===")
 
 

@@ -18,8 +18,14 @@ def _get_engine():
         # statement_cache_size=0 required for Supabase pgbouncer pooler
         import ssl
         ssl_ctx = ssl.create_default_context()
-        ssl_ctx.check_hostname = True
-        ssl_ctx.verify_mode = ssl.CERT_REQUIRED
+        if settings.database_ssl_ca_pem.strip():
+            ssl_ctx.load_verify_locations(cadata=settings.database_ssl_ca_pem)
+        if settings.database_tls_verify:
+            ssl_ctx.check_hostname = True
+            ssl_ctx.verify_mode = ssl.CERT_REQUIRED
+        else:
+            ssl_ctx.check_hostname = False
+            ssl_ctx.verify_mode = ssl.CERT_NONE
         _ssl_is_secure = (
             ssl_ctx.check_hostname is True and ssl_ctx.verify_mode == ssl.CERT_REQUIRED
         )

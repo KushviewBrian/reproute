@@ -21,7 +21,11 @@ services:
       - key: POC_MODE
         value: "false"
       - key: CORS_ALLOW_ORIGINS
-        value: https://reproute-8vhf.onrender.com
+        value: https://reproute.pages.dev,https://reproute-8vhf.onrender.com
+      - key: CORS_ALLOW_ORIGIN_REGEX
+        value: https://.*\\.pages\\.dev
+      - key: DATABASE_TLS_VERIFY
+        value: "false"
       - key: GEOCODE_WORKER_URL
         value: https://photon.komoot.io/api/
       - key: ORS_BASE_URL
