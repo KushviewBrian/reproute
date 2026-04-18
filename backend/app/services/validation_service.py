@@ -155,6 +155,34 @@ def overall_confidence(results: list[FieldResult]) -> float | None:
     return round(weighted / total_weight, 2)
 
 
+def _confidence_from_field_rows(fields: list[LeadFieldValidation]) -> float | None:
+    weighted_inputs: list[FieldResult] = []
+    fallback_values: list[float] = []
+    for field in fields:
+        if field.confidence is None:
+            continue
+        confidence = float(field.confidence)
+        fallback_values.append(confidence)
+        weighted_inputs.append(
+            FieldResult(
+                field_name=field.field_name,
+                state=field.state or "unknown",
+                confidence=confidence,
+                failure_class=field.failure_class,
+                value_current=field.value_current,
+                value_normalized=field.value_normalized,
+                evidence_json=field.evidence_json or {},
+                next_check_days=30,
+            )
+        )
+    conf = overall_confidence(weighted_inputs)
+    if conf is not None:
+        return conf
+    if fallback_values:
+        return round(sum(fallback_values) / len(fallback_values), 2)
+    return None
+
+
 async def get_validation_state(db: AsyncSession, business_id: UUID) -> tuple[LeadValidationRun | None, list[LeadFieldValidation], float | None, str]:
     run = (
         await db.execute(
@@ -171,8 +199,7 @@ async def get_validation_state(db: AsyncSession, business_id: UUID) -> tuple[Lea
     ).scalars().all()
     if not fields:
         return run, [], None, "Unchecked"
-    vals = [float(f.confidence) for f in fields if f.confidence is not None]
-    conf = round(sum(vals) / len(vals), 2) if vals else None
+    conf = _confidence_from_field_rows(list(fields))
     return run, list(fields), conf, _overall_label(conf)
 
 
@@ -181,9 +208,14 @@ def verify_admin_hmac(timestamp_header: str, token_header: str) -> None:
     secret = settings.validation_hmac_secret.strip()
     if not secret:
         raise PermissionError("Validation HMAC secret missing")
-    now_ts = int(datetime.now(UTC).timestamp())
-    ts = int(timestamp_header)
-    ttl = int(settings.validation_admin_token_ttl_seconds)
+    try:
+        now_ts = int(datetime.now(UTC).timestamp())
+        ts = int(timestamp_header)
+        ttl = int(settings.validation_admin_token_ttl_seconds)
+    except (TypeError, ValueError) as exc:
+        raise PermissionError("Validation admin token invalid") from exc
+    if ttl <= 0:
+        raise PermissionError("Validation admin token invalid")
     if abs(now_ts - ts) > ttl:
         raise PermissionError("Validation admin token expired")
     expected = hmac.new(secret.encode("utf-8"), str(ts).encode("utf-8"), hashlib.sha256).hexdigest()

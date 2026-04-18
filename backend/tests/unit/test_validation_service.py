@@ -4,12 +4,14 @@ import hashlib
 import hmac
 import uuid
 from datetime import UTC, datetime
+from types import SimpleNamespace
 
 import httpx
 import pytest
 
 from app.core.config import get_settings
 from app.services.validation_service import (
+    _confidence_from_field_rows,
     _classify_request_failure,
     _normalize_phone,
     _overall_label,
@@ -104,6 +106,17 @@ def test_verify_admin_hmac_accepts_valid_token(monkeypatch) -> None:
         settings.validation_admin_token_ttl_seconds = original_ttl
 
 
+def test_verify_admin_hmac_rejects_non_numeric_timestamp() -> None:
+    settings = get_settings()
+    original_secret = settings.validation_hmac_secret
+    settings.validation_hmac_secret = "secret"
+    try:
+        with pytest.raises(PermissionError, match="invalid"):
+            verify_admin_hmac("not-a-number", "abc")
+    finally:
+        settings.validation_hmac_secret = original_secret
+
+
 @pytest.mark.asyncio
 async def test_reserve_validation_caps_raises_when_counter_unavailable(monkeypatch) -> None:
     async def _incr(_key):
@@ -139,3 +152,59 @@ async def test_reserve_validation_caps_raises_when_limit_exceeded(monkeypatch) -
             await reserve_validation_caps(uuid.uuid4())
     finally:
         settings.validation_daily_cap = original_daily
+
+
+def test_confidence_from_field_rows_prefers_weighted_logic() -> None:
+    fields = [
+        SimpleNamespace(
+            field_name="website",
+            state="valid",
+            confidence=90.0,
+            failure_class=None,
+            value_current="https://x",
+            value_normalized="https://x",
+            evidence_json={},
+        ),
+        SimpleNamespace(
+            field_name="phone",
+            state="warning",
+            confidence=60.0,
+            failure_class=None,
+            value_current="+13175551212",
+            value_normalized="+13175551212",
+            evidence_json={},
+        ),
+    ]
+    conf = _confidence_from_field_rows(fields)
+    assert conf is not None
+    assert conf == overall_confidence(
+        [
+            FieldResult("website", "valid", 90.0, None, None, None, {}, 30),
+            FieldResult("phone", "warning", 60.0, None, None, None, {}, 30),
+        ]
+    )
+
+
+def test_confidence_from_field_rows_falls_back_for_unknown_fields() -> None:
+    fields = [
+        SimpleNamespace(
+            field_name="hours",
+            state="warning",
+            confidence=50.0,
+            failure_class=None,
+            value_current=None,
+            value_normalized=None,
+            evidence_json={},
+        ),
+        SimpleNamespace(
+            field_name="address",
+            state="valid",
+            confidence=70.0,
+            failure_class=None,
+            value_current=None,
+            value_normalized=None,
+            evidence_json={},
+        ),
+    ]
+    conf = _confidence_from_field_rows(fields)
+    assert conf == 60.0
