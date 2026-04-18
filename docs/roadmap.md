@@ -1,6 +1,6 @@
 # RepRoute Master Roadmap
 
-Updated: April 18, 2026 (Phase 5 backend runtime hardening complete; Phase 4 offline sync wiring next)
+Updated: April 18, 2026 (Phase 5 UI complete and deployed to production; validation trigger, badges, evidence drawer, and per-field chips live)
 
 ## Purpose
 
@@ -45,8 +45,7 @@ RepRoute is a route-aware field sales prospecting platform for B2B reps. Insuran
 - First-run onboarding overlay (Plan -> Review -> Track), dismissible/non-repeating
 - One-time score explanation tooltip behavior on first score interaction
 - Ingestion scripts (`scripts/ingest_overture.py`) and scoring validation scripts
-- Phase 5 schema foundations: validation/expansion tables and migrations
-- Phase 5 runtime slice in progress: validation trigger/read/admin run-due APIs, queue claim/cap/retry plumbing, and website/phone validation engine wiring
+- Phase 5 complete: validation/expansion schema, all API endpoints, validation engine, CF Worker cron, and full UI (badges, evidence drawer, per-field chips, pin/unpin, "Validate now" trigger with polling)
 - Security hardening (partial): request body limit, backend security headers, extended rate limits, Cloudflare Pages `_headers`
 - Security middleware test scaffolding added (`backend/tests/test_security_middleware.py`)
 - Structured audit logging added for mutation/admin/auth-denial events (middleware-based)
@@ -73,7 +72,7 @@ RepRoute is a route-aware field sales prospecting platform for B2B reps. Insuran
 - Security P0 is not yet closed: P0-2/3/4 are implemented and P0-1 strict TLS code path is now restored with emergency override controls; verification/sign-off remains open (see Phase 2)
 - Security P1 verification and CI/security operations tasks are still incomplete (see Phase 2); `VALIDATION_HMAC_SECRET` startup guard now closed
 - Backend security test coverage expanded further (startup HMAC secret + CORS regex compile checks, explicit cross-user validation denial); CI/runtime evidence sign-off still open
-- Phase 5 runtime is not complete (scheduler integration, full endpoint verification, and evidence sign-off still open)
+- Phase 5 evidence sign-off still open (10+ sample runs with correct outcomes required before gate can close)
 - Dataset enrichment not implemented (see Phase 6)
 - Scoring calibration evidence is incomplete (5-route evidence + `Other/Unknown` threshold sign-off) (see Phase 3)
 - Evidence capture for ingestion QA and scoring validation is incomplete (see Phase 1)
@@ -291,7 +290,7 @@ Complete all remaining MVP-required UI and workflow features. This is the larges
 
 ### Phase 5 — Lead Validation System
 
-**Status: In progress — schema layer implemented and MVP runtime slice partially implemented**
+**Status: Feature complete — pending evidence sign-off**
 
 **Scope:**
 Implement the selective confidence-based validation system per `docs/leadvalidationplan.md`. This is a core trust signal for MVP — the system must be live before pilot.
@@ -594,7 +593,7 @@ MVP is complete when all are true:
 | 2 | Security lockdown | In progress (P0 + key P1 code landed) | Medium |
 | 3 | Scoring + score explanation | In progress (tooltip landed; evidence incomplete) | Medium |
 | 4 | Discovery UX + workflow completion | In progress (dedup/onboarding landed; verification incomplete) | Medium |
-| 5 | Lead validation system | In progress (backend runtime complete; UI badge/evidence drawer + live evidence sign-off remain) | Medium |
+| 5 | Lead validation system | Feature complete — evidence sign-off remaining | High |
 | 6 | Dataset expansion | Not started | Low |
 | 7 | Operations hardening | Partial | Low |
 | 8 | MVP verification and QA | Not started | Low |
@@ -609,7 +608,7 @@ MVP is complete when all are true:
 3. **Finish Phase 2 verification/sign-off evidence** — run full negative auth/authz + middleware/security-header + startup-config suites in CI and log commit/CI references in `securityplan.md` and gate closeout entries.
 4. **Close remaining Phase 1 evidence** — replace EXPLAIN placeholder and commit one ingestion QA artifact with route IDs, commands, and p95 context in `docs/evidence/`.
 5. **Close Phase 3/4 verification evidence** — commit 5-route scoring artifact (`Other/Unknown` rate), offline reconnect no-loss proof (notes + status), dedup spot-check, and Today dashboard correctness checks.
-6. **Complete Phase 5 MVP runtime sign-off** — verify queue cap/retry/taxonomy behavior and endpoint auth coverage with evidence package (10+ sample runs + auth failure cases).
+6. **Close Phase 5 evidence sign-off** — run 10+ validation jobs on real saved leads, verify correct state/confidence outcomes for website and phone fields, commit results to evidence log.
 7. **Use gate closeout workflow for each merge/deploy** — attach `docs/GATE_CLOSEOUT_TEMPLATE.md` entries with rollback notes and artifact links before marking any gate complete.
 
 ---
