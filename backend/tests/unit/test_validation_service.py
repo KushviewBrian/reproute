@@ -15,6 +15,7 @@ from app.services.validation_service import (
     _classify_request_failure,
     _normalize_phone,
     _overall_label,
+    _validate_website,
     reserve_validation_caps,
     overall_confidence,
     verify_admin_hmac,
@@ -208,3 +209,52 @@ def test_confidence_from_field_rows_falls_back_for_unknown_fields() -> None:
     ]
     conf = _confidence_from_field_rows(fields)
     assert conf == 60.0
+
+
+@pytest.mark.asyncio
+async def test_validate_website_bot_blocked_maps_to_unknown(monkeypatch) -> None:
+    class _Resp:
+        status_code = 403
+        url = "https://example.com"
+        text = ""
+
+    class _Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            _ = exc_type, exc, tb
+            return False
+
+        async def get(self, _url):
+            return _Resp()
+
+    monkeypatch.setattr(validation_service.httpx, "AsyncClient", lambda **_kwargs: _Client())
+    result = await _validate_website("example.com")
+    assert result.failure_class == "bot_blocked"
+    assert result.state == "unknown"
+    assert result.confidence == 45.0
+
+
+@pytest.mark.asyncio
+async def test_validate_website_http_error_maps_to_invalid(monkeypatch) -> None:
+    class _Resp:
+        status_code = 500
+        url = "https://example.com"
+        text = ""
+
+    class _Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            _ = exc_type, exc, tb
+            return False
+
+        async def get(self, _url):
+            return _Resp()
+
+    monkeypatch.setattr(validation_service.httpx, "AsyncClient", lambda **_kwargs: _Client())
+    result = await _validate_website("example.com")
+    assert result.failure_class == "http_error"
+    assert result.state == "invalid"
