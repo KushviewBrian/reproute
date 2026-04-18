@@ -34,9 +34,11 @@ export function MapPanel({ routeGeoJson, leads, selectedLead, onSelectLead }: Pr
   const mapRef = useRef<maplibregl.Map | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const leadsRef = useRef<Lead[]>([]);
+  const onSelectLeadRef = useRef(onSelectLead);
   const [styleLoaded, setStyleLoaded] = useState(false);
 
   leadsRef.current = leads;
+  onSelectLeadRef.current = onSelectLead;
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -144,7 +146,7 @@ export function MapPanel({ routeGeoJson, leads, selectedLead, onSelectLead }: Pr
         if (!feature) return;
         const businessId = feature.properties?.business_id as string | undefined;
         const found = leadsRef.current.find((l) => l.business_id === businessId);
-        if (found) onSelectLead(found);
+        if (found) onSelectLeadRef.current(found);
       });
 
       map.on("mouseenter", "lead-points", () => { map.getCanvas().style.cursor = "pointer"; });
@@ -155,7 +157,7 @@ export function MapPanel({ routeGeoJson, leads, selectedLead, onSelectLead }: Pr
       map.remove();
       mapRef.current = null;
     };
-  }, [onSelectLead]);
+  }, []);
 
   // Update route + leads data
   useEffect(() => {
