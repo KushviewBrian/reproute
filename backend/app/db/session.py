@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
+from uuid import uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 
 _engine = None
@@ -29,13 +31,20 @@ def _get_engine():
         _ssl_is_secure = (
             ssl_ctx.check_hostname is True and ssl_ctx.verify_mode == ssl.CERT_REQUIRED
         )
-        connect_args = {"timeout": 10, "command_timeout": 10, "ssl": ssl_ctx, "statement_cache_size": 0, "prepared_statement_cache_size": 0}
+        connect_args = {
+            "timeout": 10,
+            "command_timeout": 10,
+            "ssl": ssl_ctx,
+            # Required for PgBouncer transaction/statement pooling.
+            "statement_cache_size": 0,
+            # Avoid duplicate statement name collisions across pooled server sessions.
+            "prepared_statement_name_func": lambda: f"__asyncpg_{uuid4().hex}__",
+        }
         _engine = create_async_engine(
             settings.database_url,
             echo=False,
-            pool_pre_ping=False,
-            pool_size=2,
-            max_overflow=2,
+            # App-level pooling is unnecessary with PgBouncer and can amplify statement issues.
+            poolclass=NullPool,
             connect_args=connect_args,
         )
         _SessionLocal = async_sessionmaker(
