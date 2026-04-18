@@ -112,6 +112,9 @@ async def enrich_business(
     Fetch a Business row, run OSM enrichment, and persist results.
     Returns True if enrichment ran, False if skipped (fresh / no data / not found).
     Raises PermissionError if quota is exhausted.
+
+    Intentionally reads needed fields then closes the DB transaction before
+    making the Overpass HTTP call, so no connection is held across network I/O.
     """
     business = await db.get(Business, business_id)
     if business is None:
@@ -132,16 +135,22 @@ async def enrich_business(
     if lat_lng is None or lat_lng.lat is None or lat_lng.lng is None:
         return False
 
+    # Snapshot what we need, then release the connection before the HTTP call.
+    lat = float(lat_lng.lat)
+    lng = float(lat_lng.lng)
+    name = business.name
+    await db.rollback()  # release the connection back to the pool cleanly
+
     await reserve_enrichment_caps(user_id)
 
-    result = await fetch_osm_enrichment(
-        lat=float(lat_lng.lat),
-        lng=float(lat_lng.lng),
-        name=business.name,
-    )
+    result = await fetch_osm_enrichment(lat=lat, lng=lng, name=name)
+
+    # Re-fetch the row for the write — connection was released above
+    business = await db.get(Business, business_id)
+    if business is None:
+        return False
 
     if result is None:
-        # Still mark enriched_at so we don't hammer Overpass for missing leads
         business.osm_enriched_at = datetime.now(UTC)
         await db.commit()
         return False
@@ -157,7 +166,8 @@ async def enrich_business(
 async def enrich_route_top_leads(route_id: UUID, limit: int = 20) -> None:
     """
     Enrich the top `limit` route leads that are missing phone or website.
-    Opens its own DB session — safe to call as a FastAPI BackgroundTask.
+    Uses a short-lived session only for the candidate query, then opens a
+    fresh session per business so no connection is held across Overpass HTTP calls.
     All errors are swallowed.
     """
     _, SessionLocal = _get_engine()
@@ -180,17 +190,19 @@ async def enrich_route_top_leads(route_id: UUID, limit: int = 20) -> None:
                     .limit(limit)
                 )
             ).scalars().all()
-
-            for business_id in rows:
-                try:
-                    await enrich_business(db, business_id, user_id=None, force=False)
-                except PermissionError:
-                    logger.info("osm_enrich_route_cap_reached route_id=%s", route_id)
-                    break
-                except Exception as exc:
-                    logger.warning("osm_enrich_route_lead_error business_id=%s error=%r", business_id, exc)
     except Exception as exc:
-        logger.warning("osm_enrich_route_error route_id=%s error=%r", route_id, exc)
+        logger.warning("osm_enrich_route_query_error route_id=%s error=%r", route_id, exc)
+        return
+
+    for business_id in rows:
+        try:
+            async with SessionLocal() as db:
+                await enrich_business(db, business_id, user_id=None, force=False)
+        except PermissionError:
+            logger.info("osm_enrich_route_cap_reached route_id=%s", route_id)
+            break
+        except Exception as exc:
+            logger.warning("osm_enrich_route_lead_error business_id=%s error=%r", business_id, exc)
 
 
 # ---------------------------------------------------------------------------

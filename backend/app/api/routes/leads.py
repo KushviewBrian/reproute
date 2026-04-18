@@ -44,8 +44,14 @@ async def get_route_leads(
         offset=offset,
     )
 
-    # Enrich top leads missing contact info — non-blocking, errors are swallowed inside
+    # Enrich top leads missing contact info on first fetch only.
+    # Guard via a short-lived Redis key so repeated page loads don't re-queue 20 Overpass calls.
     if offset == 0:
-        background_tasks.add_task(enrich_route_top_leads, route_id)
+        from app.utils.redis_client import redis_client as _redis
+        lock_key = f"enrich:route_fired:{route_id}"
+        already_fired = await _redis.get(lock_key)
+        if not already_fired:
+            await _redis.set(lock_key, "1", ex=3600)
+            background_tasks.add_task(enrich_route_top_leads, route_id)
 
     return LeadsResponse(route_id=route_id, leads=[LeadItem(**row) for row in leads], total=total, filtered=filtered)
