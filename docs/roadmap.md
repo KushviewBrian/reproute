@@ -1,6 +1,6 @@
 # RepRoute Master Roadmap
 
-Updated: April 17, 2026
+Updated: April 17, 2026 (hotfix state aligned to deployed behavior)
 
 ## Purpose
 
@@ -43,6 +43,7 @@ RepRoute is a route-aware field sales prospecting platform for B2B reps. Insuran
 - Phase 5 schema foundations: validation/expansion tables and migrations
 - Security hardening (partial): request body limit, backend security headers, extended rate limits, Cloudflare Pages `_headers`
 - Security middleware test scaffolding added (`backend/tests/test_security_middleware.py`)
+- Deployment compatibility patch: startup now backfills missing `saved_lead` follow-up columns (`IF NOT EXISTS`) to avoid Today-view runtime failures when migrations lag
 
 ### Confirmed by recent checks
 
@@ -53,7 +54,7 @@ RepRoute is a route-aware field sales prospecting platform for B2B reps. Insuran
 
 ### Confirmed open gaps (must close before pilot)
 
-- Security P0 code is implemented but not yet fully verified/closed (see Phase 2)
+- Security P0 is not closed: P0-2/3/4 are implemented, but P0-1 (strict DB TLS enforcement) is currently relaxed behind `DATABASE_TLS_VERIFY` and must be re-locked before pilot (see Phase 2)
 - Security P1 verification and CI/security operations tasks are still incomplete (see Phase 2)
 - Backend security test execution is incomplete in CI/runtime environment (negative auth + cross-user suite not yet closed)
 - Lead validation system not implemented (see Phase 5)
@@ -134,7 +135,7 @@ The route geometry, corridor query, and Overture ingestion pipeline are implemen
 
 ### Phase 2 — Security Lockdown (MVP Critical)
 
-**Status: In progress — P0 code landed + key P1 controls landed + test scaffolding added; verification/sign-off incomplete**
+**Status: In progress — P0-2/3/4 landed + key P1 controls landed + test scaffolding added; P0-1 strict TLS temporarily relaxed for deploy stability; verification/sign-off incomplete**
 
 This is the highest-risk open work. All P0 items must close before pilot traffic. Security work that is backend-only can be parallelized against Phase 3 frontend work.
 
@@ -143,7 +144,7 @@ Close all P0 security risks. Establish baseline hardening across auth, data acce
 
 **Deliverables — P0 (must close before any pilot traffic):**
 
-- **P0-1 DB TLS:** In `backend/app/db/session.py`, replace `ssl.CERT_NONE` with `ssl.CERT_REQUIRED` + `check_hostname=True`. Add production startup check that fails if `CERT_NONE` is active. Verify pgbouncer cert is valid before removing.
+- **P0-1 DB TLS (re-opened):** Runtime now supports `DATABASE_TLS_VERIFY` and currently allows non-verified TLS in production with warning-only startup behavior to keep deployment stable. Before pilot, restore strict production enforcement (`ssl.CERT_REQUIRED` + `check_hostname=True`) and fail startup if insecure TLS is configured.
 - **P0-2 JWT verification:** In `backend/app/core/auth.py`, remove the conditional `if settings.clerk_jwks_url:` guard — verification must always run in non-dev environments. Add production startup check that fails if `CLERK_JWKS_URL` or `CLERK_JWT_ISSUER` are empty.
 - **P0-3 Admin import hardening:**
   - Admin email allowlist: `if user.email not in settings.admin_allowed_emails: raise 403`
@@ -172,7 +173,7 @@ Close all P0 security risks. Establish baseline hardening across auth, data acce
 - Add `VALIDATION_HMAC_SECRET` to `Settings` and secret stores now so Phase 5 can wire it without a Phase 2 re-open
 
 **Test focus:**
-- New/changed security tests: DB TLS required in production, JWT verification hard-fail when JWKS/issuer misconfigured, `poc_mode=true` startup block in production
+- New/changed security tests: strict DB TLS required in production (with startup hard-fail on insecure config), JWT verification hard-fail when JWKS/issuer misconfigured, `poc_mode=true` startup block in production
 - New/changed authz tests: admin allowlist + path allowlist, HMAC signature validity/expiry checks, extended rate-limit enforcement and body-size limits
 - New/changed middleware tests: response security headers, request body size enforcement, production HSTS header behavior
 - Existing regression checks: authenticated route/leads/saved/notes/export flows still function for valid users and tokens after security hardening
@@ -230,6 +231,7 @@ Complete all remaining MVP-required UI and workflow features. This is the larges
 
 **Backend:**
 - Schema migration: add `next_follow_up_at` (timestamptz, nullable) and `last_contact_attempt_at` (timestamptz, nullable) to `saved_lead`
+- Temporary deploy-compatibility patch currently exists in backend startup to add these columns/index with `IF NOT EXISTS`; remove this once migration execution is consistently guaranteed in deployment
 - Deduplication baseline (query-time only for MVP): suppress obvious duplicates from the same lead list using same-name (fuzzy >= 85%) + within 100m + matching phone or website when available
 - Defer canonical merge model fields/tables (`canonical_business_id`, `dedupe_group_id`, multi-source merge state) until after Phase 6, consistent with `datasetexpansion.md`
 - `PATCH /saved-leads/{id}`: add `next_follow_up_at` and `last_contact_attempt_at` fields
@@ -588,12 +590,12 @@ MVP is complete when all are true:
 
 ## Immediate Next Sprint (Recommended)
 
-1. **Verify and close Phase 2 P0/P1 formally** — run security regression tests (including cross-user authz), middleware/security-header tests, production startup config validation, and update `securityplan.md` with commit-linked closure evidence.
+1. **Re-close Phase 2 P0-1 and then verify P0/P1 formally** — restore strict production DB TLS enforcement (`DATABASE_TLS_VERIFY=true` + startup hard-fail when insecure), then run security regression tests (including cross-user authz), middleware/security-header tests, production startup config validation, and update `securityplan.md` with commit-linked closure evidence.
 2. **Replace Phase 1 placeholder evidence with real artifacts** — run one ingestion QA pass and one real `EXPLAIN ANALYZE` trace on seeded metro data; commit results to `docs/evidence/` + `docs/PHASE1_4_VALIDATION.md`.
 3. **Finish Phase 3 remaining items** — add one-time score explanation tooltip and commit 5-route scoring validation evidence (including `Other/Unknown` rate).
 4. **Finish Phase 4 remaining items** — implement dedup suppression baseline, onboarding overlay, and complete end-to-end offline/reconnect verification for status+notes.
 5. **Finish remaining Phase 2 P1 platform tasks** — CI secret/dependency scanning, branch protection enforcement, monitoring/log-forwarding checks, and ensure backend security tests run in CI.
-6. **Start Phase 5 runtime work** — keep schema as-is, then implement validation APIs/queue/worker orchestration only after Phase 2 P0 is signed off.
+6. **Start Phase 5 runtime work** — keep schema as-is, then implement validation APIs/queue/worker orchestration only after Phase 2 P0 is signed off and the temporary startup schema compatibility patch is retired.
 
 ---
 

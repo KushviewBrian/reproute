@@ -23,19 +23,23 @@ No plan is literally bulletproof. The objective is defense-in-depth with verifie
 These are confirmed open issues in the current codebase. Each must be closed before pilot.
 
 ### P0-1: Database TLS certificate verification disabled
-**Status: CODE IMPLEMENTED; VERIFICATION PENDING**
+**Status: PARTIALLY IMPLEMENTED; TEMPORARILY RELAXED IN PRODUCTION HOTFIX; NOT CLOSED**
 
-`backend/app/db/session.py` now enforces hostname and certificate verification:
+`backend/app/db/session.py` now supports strict verification, but it is controlled by `DATABASE_TLS_VERIFY` and can run with `CERT_NONE`:
 ```python
-ssl_ctx.check_hostname = True
-ssl_ctx.verify_mode = ssl.CERT_REQUIRED
+if settings.database_tls_verify:
+    ssl_ctx.check_hostname = True
+    ssl_ctx.verify_mode = ssl.CERT_REQUIRED
+else:
+    ssl_ctx.check_hostname = False
+    ssl_ctx.verify_mode = ssl.CERT_NONE
 ```
-Startup also refuses production boot if TLS is insecure. Remaining work is production verification against the live pooler cert chain.
+`backend/app/main.py` currently logs a warning in production when TLS is insecure instead of failing startup. This is a temporary deploy-stability tradeoff and must be reversed before pilot.
 
 **Required fix:**
 - In production, use `ssl.CERT_REQUIRED` with `check_hostname=True`.
 - Load the appropriate CA bundle (`ssl.create_default_context()` with no overrides does this correctly).
-- The pgbouncer pooler URL must be reachable with a valid cert — verify this before removing `CERT_NONE`.
+- The pgbouncer pooler URL must be reachable with a valid cert — verify this, set `DATABASE_TLS_VERIFY=true`, and remove insecure fallback from production configuration.
 - Add a startup check: if `environment == "production"` and `ssl.CERT_NONE` is active, log a critical error and refuse to start.
 
 ### P0-2: JWT signature verification is optional, not enforced
@@ -138,7 +142,7 @@ JWKS now uses a 1-hour TTL cache. Remaining work is integration validation durin
 ### 4.3 Database Hardening
 
 **What's required:**
-- TLS verification enabled in production (P0-1 fix)
+- Strict TLS verification enforced in production (P0-1 re-close: no insecure fallback in prod)
 - Least-privileged DB roles:
   - App role: `SELECT`, `INSERT`, `UPDATE`, `DELETE` on app tables only
   - Migration role: `CREATE`, `ALTER`, `DROP` — used only from CI/manual ops, not the running app
@@ -153,7 +157,7 @@ JWKS now uses a 1-hour TTL cache. Remaining work is integration validation durin
 - RLS is not relied upon for security (app enforces ownership in Python) — this is intentional and acceptable; do not add RLS as a false safety net without testing it end-to-end
 
 **Implementation checklist:**
-- [ ] Fix TLS verification (P0-1)
+- [ ] Re-close P0-1: enforce strict TLS in production (`DATABASE_TLS_VERIFY=true`) and fail startup on insecure DB TLS config
 - [ ] Create least-privileged DB app role; app connection string uses app role, not superuser
 - [ ] Verify Supabase Data API is restricted or disabled for app tables
 - [ ] Confirm `service_role` key is not in any env file committed to repo or in Render env vars accessible to the frontend
@@ -433,7 +437,7 @@ For the frontend (Cloudflare Pages `_headers` file in `frontend/public/`):
 ### Phase A (0–7 days) — Critical Lockdown
 Close all P0 items.
 
-- [x] Fix DB TLS verification in production (P0-1)
+- [ ] Re-close DB TLS verification in production (P0-1): strict verify enforced + production startup hard-fail on insecure config
 - [x] Make JWT signature verification unconditional in production (P0-2)
 - [x] Add startup validator: fail if required auth env vars are missing in production
 - [x] Add `poc_mode` production guard to startup (P0-4)
@@ -473,7 +477,7 @@ Close all P0 items.
 ## 8) Security Checklist (Definition of Done Before Pilot)
 
 ### P0 Items
-- [x] Production DB uses verified TLS (no `CERT_NONE`, no `check_hostname=False`)
+- [ ] Production DB uses verified TLS (no `CERT_NONE`, no `check_hostname=False`)
 - [x] JWT signature verification is unconditional in production (not gated on env var presence)
 - [x] Startup fails in production if `CLERK_JWKS_URL` or `CLERK_JWT_ISSUER` are empty
 - [x] Startup fails in production if `poc_mode=True`
