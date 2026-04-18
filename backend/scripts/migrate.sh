@@ -5,11 +5,22 @@ set -e
 # Stamp it at 0003 (last migration applied manually) so alembic only runs 0004+.
 python - <<'EOF'
 import sys
+from urllib.parse import urlparse, urlencode, parse_qs, urlunparse
 from sqlalchemy import create_engine, text
 from app.core.config import get_settings
 
+BAD_KEYS = {"prepared_statement_cache_size", "statement_cache_size", "command_timeout", "timeout"}
+
+def clean_url(url):
+    url = url.replace("postgresql+asyncpg://", "postgresql+psycopg://", 1)
+    if "?" not in url:
+        return url
+    base, qs = url.split("?", 1)
+    kept = "&".join(p for p in qs.split("&") if p.split("=")[0] not in BAD_KEYS)
+    return f"{base}?{kept}" if kept else base
+
 settings = get_settings()
-url = settings.database_url.replace("postgresql+asyncpg://", "postgresql+psycopg://", 1)
+url = clean_url(settings.database_url)
 engine = create_engine(url)
 with engine.connect() as conn:
     result = conn.execute(text(
