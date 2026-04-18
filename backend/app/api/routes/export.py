@@ -28,8 +28,8 @@ async def export_route_leads_csv(
 ) -> StreamingResponse:
     await enforce_rate_limit(f"rl:export:{user.id}", limit=20, window_seconds=3600)
 
-    route = (await db.execute(select(Route).where(Route.id == route_id, Route.user_id == user.id))).scalar_one_or_none()
-    if not route:
+    route = await db.get(Route, route_id)
+    if not route or route.user_id != user.id:
         return StreamingResponse(iter(["route not found\n"]), media_type="text/plain", status_code=404)
 
     leads, _, _ = await fetch_leads(db, route_id=route_id, min_score=0, limit=2000, offset=0)
