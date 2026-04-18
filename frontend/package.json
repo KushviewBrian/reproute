@@ -25,5 +25,9 @@
     "typescript": "^5.9.2",
     "vite": "^5.4.19",
     "vite-plugin-pwa": "^0.21.1"
+  },
+  "overrides": {
+    "@clerk/shared": "^3.47.4",
+    "serialize-javascript": "^7.0.5"
   }
 }
