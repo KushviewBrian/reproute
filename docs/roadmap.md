@@ -1,6 +1,6 @@
 # RepRoute Master Roadmap
 
-Updated: April 18, 2026 (reliability hardening wave active)
+Updated: April 18, 2026 (Phase 5 backend runtime hardening complete; Phase 4 offline sync wiring next)
 
 ## Purpose
 
@@ -59,6 +59,7 @@ RepRoute is a route-aware field sales prospecting platform for B2B reps. Insuran
 - Phase 2 rate-limit observability: Redis unavailability in production now emits a `CRITICAL` log (`rate_limit_redis_unavailable`) instead of silently bypassing; fail-open behavior retained for reliability but is now auditable
 - Phase 2 test coverage: startup tests added for missing HMAC secret and invalid CORS regex; cross-user validation access denial explicitly tested (trigger + read endpoints)
 - Phase 1 stale-record observability: ingest script now logs `stale_record_update` line with `refresh_started_at` timestamp and row count immediately after marking — provides per-refresh audit trail in CI/ops logs
+- Phase 5 backend runtime complete: pin/unpin endpoint (`PATCH /leads/{id}/validation/{field_name}`), retention pruner (`POST /admin/validation/prune`), inter-fetch jitter (500ms–2000ms), pinned-field skip in `process_run_by_id`, CF Worker cron (`infra/validation-cron.js` + `wrangler.validation-cron.toml`), full unit/route test coverage; HMAC startup guard active in production
 
 ### Confirmed by recent checks
 
@@ -593,7 +594,7 @@ MVP is complete when all are true:
 | 2 | Security lockdown | In progress (P0 + key P1 code landed) | Medium |
 | 3 | Scoring + score explanation | In progress (tooltip landed; evidence incomplete) | Medium |
 | 4 | Discovery UX + workflow completion | In progress (dedup/onboarding landed; verification incomplete) | Medium |
-| 5 | Lead validation system | In progress (schema + MVP runtime slice partially landed) | Medium |
+| 5 | Lead validation system | In progress (backend runtime complete; UI badge/evidence drawer + live evidence sign-off remain) | Medium |
 | 6 | Dataset expansion | Not started | Low |
 | 7 | Operations hardening | Partial | Low |
 | 8 | MVP verification and QA | Not started | Low |
@@ -603,12 +604,13 @@ MVP is complete when all are true:
 
 ## Immediate Next Sprint (Recommended)
 
-1. **Close external platform blockers** — enforce branch protection, enable `/health` monitoring alerts, and wire log forwarding from Render with evidence links.
-2. **Finish Phase 2 verification/sign-off evidence** — run full negative auth/authz + middleware/security-header + startup-config suites in CI and log commit/CI references in `securityplan.md` and gate closeout entries.
-3. **Close remaining Phase 1 evidence** — replace EXPLAIN placeholder and commit one ingestion QA artifact with route IDs, commands, and p95 context in `docs/evidence/`.
-4. **Close Phase 3/4 verification evidence** — commit 5-route scoring artifact (`Other/Unknown` rate), offline reconnect no-loss proof (notes + status), dedup spot-check, and Today dashboard correctness checks.
-5. **Complete Phase 5 MVP runtime sign-off** — verify queue cap/retry/taxonomy behavior and endpoint auth coverage with evidence package (10+ sample runs + auth failure cases).
-6. **Use gate closeout workflow for each merge/deploy** — attach `docs/GATE_CLOSEOUT_TEMPLATE.md` entries with rollback notes and artifact links before marking any gate complete.
+1. **Wire Phase 4 offline status change sync** — `SavedLeads.tsx` currently calls `updateSavedLead` directly even when offline; it must fall back to `enqueueStatusChange` + show a sync-state indicator when unsynced items exist. The queue flush functions and localStorage keys already exist in `offlineQueue.ts`; only the UI call-sites and indicator are missing. This is the next completable pure-code task.
+2. **Close external platform blockers** — enforce branch protection, enable `/health` monitoring alerts, and wire log forwarding from Render with evidence links.
+3. **Finish Phase 2 verification/sign-off evidence** — run full negative auth/authz + middleware/security-header + startup-config suites in CI and log commit/CI references in `securityplan.md` and gate closeout entries.
+4. **Close remaining Phase 1 evidence** — replace EXPLAIN placeholder and commit one ingestion QA artifact with route IDs, commands, and p95 context in `docs/evidence/`.
+5. **Close Phase 3/4 verification evidence** — commit 5-route scoring artifact (`Other/Unknown` rate), offline reconnect no-loss proof (notes + status), dedup spot-check, and Today dashboard correctness checks.
+6. **Complete Phase 5 MVP runtime sign-off** — verify queue cap/retry/taxonomy behavior and endpoint auth coverage with evidence package (10+ sample runs + auth failure cases).
+7. **Use gate closeout workflow for each merge/deploy** — attach `docs/GATE_CLOSEOUT_TEMPLATE.md` entries with rollback notes and artifact links before marking any gate complete.
 
 ---
 

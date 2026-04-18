@@ -10,6 +10,7 @@ import {
   updateSavedLead,
 } from "../api/client";
 import { cacheSavedLeads, readCachedSavedLeads } from "../lib/savedLeadCache";
+import { enqueueStatusChange, getQueuedCount } from "../lib/offlineQueue";
 
 type Props = {
   token?: string;
@@ -85,6 +86,7 @@ export function SavedLeads({ token, currentRouteId, onAddToRoute, onCountChange 
   const [exporting, setExporting] = useState(false);
   const [exportingAll, setExportingAll] = useState(false);
   const [cacheMeta, setCacheMeta] = useState<string | null>(null);
+  const [queueCount, setQueueCount] = useState(() => getQueuedCount());
 
   useEffect(() => {
     let cancelled = false;
@@ -176,6 +178,24 @@ export function SavedLeads({ token, currentRouteId, onAddToRoute, onCountChange 
 
   async function handleFollowUpChange(id: string, value: string) {
     const iso = value ? `${value}T12:00:00Z` : null;
+    const item = items.find((it) => it.id === id);
+    if (!navigator.onLine || !token) {
+      if (item) {
+        enqueueStatusChange({
+          business_id: item.business_id,
+          route_id: item.route_id,
+          status: item.status,
+          next_follow_up_at: iso,
+        });
+        setQueueCount(getQueuedCount());
+      }
+      setItems((prev) => {
+        const next = sortSavedLeads(prev.map((it) => (it.id === id ? { ...it, next_follow_up_at: iso } : it)));
+        cacheSavedLeads(status, next);
+        return next;
+      });
+      return;
+    }
     const updated = await updateSavedLead(id, { next_follow_up_at: iso }, token);
     setItems((prev) => {
       const next = sortSavedLeads(prev.map((it) => (it.id === id ? { ...it, next_follow_up_at: updated.next_follow_up_at } : it)));
@@ -221,6 +241,11 @@ export function SavedLeads({ token, currentRouteId, onAddToRoute, onCountChange 
         </select>
         {cacheMeta && (
           <p style={{ fontSize: "0.7rem", color: "var(--gray-400)", marginTop: "0.35rem" }}>{cacheMeta}</p>
+        )}
+        {queueCount > 0 && (
+          <p style={{ fontSize: "0.7rem", color: "#b45309", marginTop: "0.35rem" }}>
+            {queueCount} unsynced change{queueCount > 1 ? "s" : ""} — will sync when online
+          </p>
         )}
       </div>
 
