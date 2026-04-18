@@ -229,6 +229,8 @@ export function LeadDetail({ lead, routeId, token, refreshToken, onClose }: Prop
       const msg = err instanceof Error ? err.message : "Validation failed";
       if (msg.startsWith("404")) {
         // not in scope — shouldn't happen if lead is saved, ignore
+      } else if (msg.startsWith("429")) {
+        setValidationError("Validation rate limit reached — try again tomorrow.");
       } else if (msg.toLowerCase().includes("network error")) {
         setValidationError("Server is waking up — wait 30s and try again.");
       } else {
