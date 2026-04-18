@@ -227,6 +227,7 @@ async def _get_state_stub(_db, _business_id):
         evidence_json={"status_code": 200},
         last_checked_at=None,
         next_check_at=None,
+        pinned_by_user=False,
     )
     return run, [field], 72.5, "Mostly valid"
 
