@@ -9,7 +9,10 @@ from app.core.auth import get_current_user
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.validation import (
+    AdminPruneResponse,
     AdminRunDueResponse,
+    PinFieldRequest,
+    PinFieldResponse,
     TriggerValidationRequest,
     TriggerValidationResponse,
     ValidationFieldState,
@@ -21,7 +24,9 @@ from app.services.validation_service import (
     get_validation_state,
     process_queued_runs,
     process_run_by_id,
+    prune_old_validation_runs,
     reserve_validation_caps,
+    set_field_pin,
     user_can_access_business,
     verify_admin_hmac,
 )
@@ -110,3 +115,36 @@ async def run_due_validations(
 
     queued, completed, failed = await process_queued_runs(limit=limit)
     return AdminRunDueResponse(queued=queued, completed=completed, failed=failed)
+
+
+@admin_router.post("/prune", response_model=AdminPruneResponse)
+async def prune_validations(
+    retain_days: int = Query(default=30, ge=1, le=365),
+    x_admin_timestamp: str | None = Header(default=None, alias="X-Admin-Timestamp"),
+    x_admin_token: str | None = Header(default=None, alias="X-Admin-Token"),
+    db: AsyncSession = Depends(get_db),
+) -> AdminPruneResponse:
+    if not x_admin_timestamp or not x_admin_token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing admin token headers")
+    try:
+        verify_admin_hmac(x_admin_timestamp, x_admin_token)
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+    deleted = await prune_old_validation_runs(db, retain_days=retain_days)
+    return AdminPruneResponse(deleted=deleted)
+
+
+@lead_router.patch("/{business_id}/validation/{field_name}", response_model=PinFieldResponse)
+async def pin_validation_field(
+    business_id: UUID,
+    field_name: str,
+    payload: PinFieldRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> PinFieldResponse:
+    if not await user_can_access_business(db, user.id, business_id):
+        raise HTTPException(status_code=404, detail="Business not found")
+    row = await set_field_pin(db, business_id, field_name, payload.pinned)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Validation field not found")
+    return PinFieldResponse(field_name=row.field_name, pinned_by_user=row.pinned_by_user)

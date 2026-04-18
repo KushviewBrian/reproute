@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import hmac
+import random
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -10,7 +11,7 @@ from urllib.parse import urlparse
 from uuid import UUID
 
 import httpx
-from sqlalchemy import desc, func, select, text
+from sqlalchemy import delete, desc, func, select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -446,7 +447,21 @@ async def process_run_by_id(
         await db.commit()
         return run, []
 
-    checks = [c for c in (run.requested_checks or ["website", "phone"]) if c in VALIDATION_FIELDS]
+    all_checks = [c for c in (run.requested_checks or ["website", "phone"]) if c in VALIDATION_FIELDS]
+    # Exclude fields the user has pinned — pinned fields are authoritative and skipped by automation.
+    pinned_fields: set[str] = set()
+    if all_checks:
+        pin_rows = (
+            await db.execute(
+                select(LeadFieldValidation.field_name).where(
+                    LeadFieldValidation.business_id == run.business_id,
+                    LeadFieldValidation.field_name.in_(all_checks),
+                    LeadFieldValidation.pinned_by_user.is_(True),
+                )
+            )
+        ).scalars().all()
+        pinned_fields = set(pin_rows)
+    checks = [c for c in all_checks if c not in pinned_fields]
     results: list[FieldResult] = []
     website_result: FieldResult | None = None
 
@@ -484,11 +499,16 @@ async def process_queued_runs(limit: int) -> tuple[int, int, int]:
 
     async def worker() -> None:
         nonlocal queued, completed, failed
+        first = True
         while True:
             async with lock:
                 if queued >= limit:
                     return
                 queued += 1
+            # Jitter between fetches: 500ms–2000ms, skipped on the very first job
+            if not first:
+                await asyncio.sleep(random.uniform(0.5, 2.0))
+            first = False
             async with session_local() as db:
                 run_id = await claim_next_queued_run(db)
                 if run_id is None:
@@ -505,3 +525,34 @@ async def process_queued_runs(limit: int) -> tuple[int, int, int]:
     workers = [asyncio.create_task(worker()) for _ in range(2)]
     await asyncio.gather(*workers)
     return queued, completed, failed
+
+
+async def set_field_pin(
+    db: AsyncSession,
+    business_id: UUID,
+    field_name: str,
+    pinned: bool,
+) -> LeadFieldValidation | None:
+    row = (
+        await db.execute(
+            select(LeadFieldValidation).where(
+                LeadFieldValidation.business_id == business_id,
+                LeadFieldValidation.field_name == field_name,
+            )
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        return None
+    row.pinned_by_user = pinned
+    await db.commit()
+    await db.refresh(row)
+    return row
+
+
+async def prune_old_validation_runs(db: AsyncSession, *, retain_days: int = 30) -> int:
+    cutoff = datetime.now(UTC) - timedelta(days=retain_days)
+    result = await db.execute(
+        delete(LeadValidationRun).where(LeadValidationRun.created_at < cutoff)
+    )
+    await db.commit()
+    return int(result.rowcount or 0)

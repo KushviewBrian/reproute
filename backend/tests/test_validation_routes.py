@@ -8,7 +8,7 @@ from fastapi import HTTPException
 
 from app.api.routes import validation as validation_routes
 from app.models.user import User
-from app.schemas.validation import TriggerValidationRequest
+from app.schemas.validation import PinFieldRequest, TriggerValidationRequest
 
 
 async def _noop_async(*_args, **_kwargs):
@@ -229,3 +229,101 @@ async def _get_state_stub(_db, _business_id):
         next_check_at=None,
     )
     return run, [field], 72.5, "Mostly valid"
+
+
+# ---------------------------------------------------------------------------
+# Pin/unpin endpoint tests
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_pin_field_denied_for_inaccessible_business(monkeypatch) -> None:
+    monkeypatch.setattr(validation_routes, "user_can_access_business", _false_async)
+    user = User(id=uuid.uuid4(), email="owner@example.com")
+    with pytest.raises(HTTPException) as exc:
+        await validation_routes.pin_validation_field(
+            business_id=uuid.uuid4(),
+            field_name="website",
+            payload=PinFieldRequest(pinned=True),
+            user=user,
+            db=SimpleNamespace(),
+        )
+    assert exc.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_pin_field_returns_404_when_field_not_found(monkeypatch) -> None:
+    monkeypatch.setattr(validation_routes, "user_can_access_business", _true_async)
+    monkeypatch.setattr(validation_routes, "set_field_pin", _noop_async)  # returns None
+    user = User(id=uuid.uuid4(), email="owner@example.com")
+    with pytest.raises(HTTPException) as exc:
+        await validation_routes.pin_validation_field(
+            business_id=uuid.uuid4(),
+            field_name="website",
+            payload=PinFieldRequest(pinned=True),
+            user=user,
+            db=SimpleNamespace(),
+        )
+    assert exc.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_pin_field_success(monkeypatch) -> None:
+    monkeypatch.setattr(validation_routes, "user_can_access_business", _true_async)
+    monkeypatch.setattr(validation_routes, "set_field_pin", _pin_stub)
+    user = User(id=uuid.uuid4(), email="owner@example.com")
+    resp = await validation_routes.pin_validation_field(
+        business_id=uuid.uuid4(),
+        field_name="website",
+        payload=PinFieldRequest(pinned=True),
+        user=user,
+        db=SimpleNamespace(),
+    )
+    assert resp.field_name == "website"
+    assert resp.pinned_by_user is True
+
+
+async def _pin_stub(_db, _business_id, field_name, pinned):
+    return SimpleNamespace(field_name=field_name, pinned_by_user=pinned)
+
+
+# ---------------------------------------------------------------------------
+# Prune endpoint tests
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_prune_rejects_missing_headers() -> None:
+    with pytest.raises(HTTPException) as exc:
+        await validation_routes.prune_validations(db=SimpleNamespace())
+    assert exc.value.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_prune_rejects_invalid_hmac(monkeypatch) -> None:
+    def _raise(*_args, **_kwargs):
+        raise PermissionError("Validation admin token invalid")
+    monkeypatch.setattr(validation_routes, "verify_admin_hmac", _raise)
+    with pytest.raises(HTTPException) as exc:
+        await validation_routes.prune_validations(
+            x_admin_timestamp="123",
+            x_admin_token="bad",
+            db=SimpleNamespace(),
+        )
+    assert exc.value.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_prune_success_returns_deleted_count(monkeypatch) -> None:
+    monkeypatch.setattr(validation_routes, "verify_admin_hmac", lambda *_a, **_k: None)
+    monkeypatch.setattr(validation_routes, "prune_old_validation_runs", _prune_stub)
+    resp = await validation_routes.prune_validations(
+        retain_days=30,
+        x_admin_timestamp="123",
+        x_admin_token="ok",
+        db=SimpleNamespace(),
+    )
+    assert resp.deleted == 42
+
+
+async def _prune_stub(_db, *, retain_days):
+    _ = retain_days
+    return 42

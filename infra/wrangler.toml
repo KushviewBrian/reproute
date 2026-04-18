@@ -24,3 +24,11 @@ name = "reproute-geocode-staging"
 kv_namespaces = [
   { binding = "GEOCODE_CACHE", id = "b3606269e2e840bba0b823dd3a6ec699", preview_id = "b3606269e2e840bba0b823dd3a6ec699" }
 ]
+
+# ---------------------------------------------------------------------------
+# Validation cron worker — separate entry point, deployed independently.
+# Deploy: npx wrangler deploy --config wrangler.validation-cron.toml
+# Secrets (set once via wrangler secret put):
+#   BACKEND_URL            — https://reproute-backend.onrender.com
+#   VALIDATION_HMAC_SECRET — must match VALIDATION_HMAC_SECRET on Render
+# ---------------------------------------------------------------------------

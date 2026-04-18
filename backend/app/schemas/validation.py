@@ -48,3 +48,16 @@ class AdminRunDueResponse(BaseModel):
     queued: int
     completed: int
     failed: int
+
+
+class PinFieldRequest(BaseModel):
+    pinned: bool
+
+
+class PinFieldResponse(BaseModel):
+    field_name: str
+    pinned_by_user: bool
+
+
+class AdminPruneResponse(BaseModel):
+    deleted: int

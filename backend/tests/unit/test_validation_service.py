@@ -16,8 +16,10 @@ from app.services.validation_service import (
     _normalize_phone,
     _overall_label,
     _validate_website,
+    prune_old_validation_runs,
     reserve_validation_caps,
     overall_confidence,
+    set_field_pin,
     verify_admin_hmac,
     FieldResult,
 )
@@ -258,3 +260,165 @@ async def test_validate_website_http_error_maps_to_invalid(monkeypatch) -> None:
     result = await _validate_website("example.com")
     assert result.failure_class == "http_error"
     assert result.state == "invalid"
+
+
+# ---------------------------------------------------------------------------
+# set_field_pin — unit tests with fake DB
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_set_field_pin_returns_none_when_row_missing() -> None:
+    class _FakeDb:
+        async def execute(self, _q):
+            return _ScalarNone()
+
+        async def commit(self):
+            pass
+
+        async def refresh(self, _o):
+            pass
+
+    result = await set_field_pin(_FakeDb(), uuid.uuid4(), "website", True)
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_set_field_pin_updates_and_returns_row() -> None:
+    field_row = SimpleNamespace(
+        field_name="website",
+        pinned_by_user=False,
+    )
+
+    class _FakeDb:
+        async def execute(self, _q):
+            return _ScalarOne(field_row)
+
+        async def commit(self):
+            pass
+
+        async def refresh(self, obj):
+            pass
+
+    result = await set_field_pin(_FakeDb(), uuid.uuid4(), "website", True)
+    assert result is field_row
+    assert field_row.pinned_by_user is True
+
+
+# ---------------------------------------------------------------------------
+# prune_old_validation_runs — unit test with fake DB
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_prune_old_validation_runs_returns_rowcount() -> None:
+    class _FakeResult:
+        rowcount = 7
+
+    class _FakeDb:
+        async def execute(self, _q):
+            return _FakeResult()
+
+        async def commit(self):
+            pass
+
+    deleted = await prune_old_validation_runs(_FakeDb(), retain_days=30)
+    assert deleted == 7
+
+
+# ---------------------------------------------------------------------------
+# process_run_by_id — pinned fields are skipped
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_process_run_skips_pinned_fields(monkeypatch) -> None:
+    """When website is pinned, it should not be validated even if requested."""
+    run_id = uuid.uuid4()
+    business_id = uuid.uuid4()
+
+    run_obj = SimpleNamespace(
+        id=run_id,
+        business_id=business_id,
+        user_id=None,
+        requested_checks=["website", "phone"],
+        status="queued",
+        started_at=None,
+        finished_at=None,
+        error_message=None,
+    )
+    business_obj = SimpleNamespace(
+        id=business_id,
+        website="https://example.com",
+        phone="3175551212",
+        last_validated_at=None,
+    )
+
+    validated_fields: list[str] = []
+
+    async def _fake_validate_website(_url):
+        validated_fields.append("website")
+        return FieldResult("website", "valid", 85.0, None, _url, _url, {}, 30)
+
+    async def _fake_validate_phone(_phone, _web):
+        validated_fields.append("phone")
+        return FieldResult("phone", "valid", 80.0, None, _phone, _phone, {}, 30)
+
+    class _FakeScalarResult:
+        def __init__(self, val):
+            self._val = val
+
+        def scalar_one_or_none(self):
+            return self._val
+
+        def scalars(self):
+            return self
+
+        def all(self):
+            # "website" is pinned
+            return ["website"]
+
+    from app.models.lead_validation_run import LeadValidationRun as _LVR
+
+    class _FakeDb:
+        async def get(self, model, _id):
+            if model is _LVR:
+                return run_obj
+            return business_obj
+
+        async def execute(self, _q):
+            return _FakeScalarResult(None)
+
+        async def commit(self):
+            pass
+
+        async def refresh(self, _obj):
+            pass
+
+    monkeypatch.setattr(validation_service, "_validate_website", _fake_validate_website)
+    monkeypatch.setattr(validation_service, "_validate_phone", _fake_validate_phone)
+    monkeypatch.setattr(validation_service, "upsert_field_validation", _noop_upsert)
+
+    from app.services.validation_service import process_run_by_id
+    _, _ = await process_run_by_id(_FakeDb(), run_id)
+
+    assert "website" not in validated_fields, "pinned website field should have been skipped"
+    assert "phone" in validated_fields
+
+
+async def _noop_upsert(_db, _business_id, _result):
+    pass
+
+
+# ---------------------------------------------------------------------------
+# Fake DB helpers
+# ---------------------------------------------------------------------------
+
+class _ScalarNone:
+    def scalar_one_or_none(self):
+        return None
+
+
+class _ScalarOne:
+    def __init__(self, val):
+        self._val = val
+
+    def scalar_one_or_none(self):
+        return self._val
