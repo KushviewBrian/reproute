@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import maplibregl from "maplibre-gl";
 import { PMTiles, Protocol } from "pmtiles";
@@ -34,6 +34,7 @@ export function MapPanel({ routeGeoJson, leads, selectedLead, onSelectLead }: Pr
   const mapRef = useRef<maplibregl.Map | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const leadsRef = useRef<Lead[]>([]);
+  const [styleLoaded, setStyleLoaded] = useState(false);
 
   leadsRef.current = leads;
 
@@ -79,6 +80,7 @@ export function MapPanel({ routeGeoJson, leads, selectedLead, onSelectLead }: Pr
     mapRef.current = map;
 
     map.on("load", () => {
+      setStyleLoaded(true);
       // Route corridor glow
       map.addSource("route", {
         type: "geojson",
@@ -158,7 +160,7 @@ export function MapPanel({ routeGeoJson, leads, selectedLead, onSelectLead }: Pr
   // Update route + leads data
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !map.isStyleLoaded()) return;
+    if (!map || !styleLoaded) return;
 
     const routeSource = map.getSource("route") as maplibregl.GeoJSONSource | undefined;
     if (routeSource) {
@@ -196,7 +198,7 @@ export function MapPanel({ routeGeoJson, leads, selectedLead, onSelectLead }: Pr
           })),
       });
     }
-  }, [routeGeoJson, leads, selectedLead]);
+  }, [routeGeoJson, leads, selectedLead, styleLoaded]);
 
   // Pan to selected lead
   useEffect(() => {
