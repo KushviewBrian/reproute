@@ -123,7 +123,7 @@ JWKS now uses a 1-hour TTL cache. Remaining work is integration validation durin
 - [x] Remove conditional signature verification — always verify in non-dev environments
 - [x] Add TTL to JWKS cache (1 hour); refresh on expiry
 - [x] Replace unbounded `_user_cache` with TTL-based LRU cache (max 500 entries, 5-minute TTL)
-- [ ] Unit tests: invalid signature, wrong issuer, expired token, missing JWKS URL
+- [x] Unit tests: invalid signature, wrong issuer, expired token, missing JWKS URL
 
 ### 4.2 Authorization (Object and Function Level)
 
@@ -135,7 +135,7 @@ JWKS now uses a 1-hour TTL cache. Remaining work is integration validation durin
 **Current state:** User-scoped filtering is implemented in routes, leads, saved-leads, notes, and export. Cross-user access has not been systematically tested with negative tests.
 
 **Implementation checklist:**
-- [ ] Negative tests for cross-user access on all owned resources: routes, saved-leads, notes, export
+- [x] Negative tests for cross-user access on all owned resources: routes, saved-leads, notes, export
 - [x] Admin email allowlist in `admin_import.py`
 - [x] `parquet_path` input validation in admin import
 - [ ] Audit any new endpoint added for ownership filter before merging
@@ -189,7 +189,7 @@ JWKS now uses a 1-hour TTL cache. Remaining work is integration validation durin
 6. Log rotation event in incident/ops log.
 
 **Implementation checklist:**
-- [ ] Secret scanning active in GitHub Actions CI (e.g., `trufflesecurity/trufflehog-actions-scan` or `gitleaks/gitleaks-action`)
+- [x] Secret scanning active in GitHub Actions CI (e.g., `trufflesecurity/trufflehog-actions-scan` or `gitleaks/gitleaks-action`)
 - [ ] Confirm no secrets in frontend bundle (run `grep -r "sk_" dist/` after build)
 - [ ] Document secret owner and rotation reminder (calendar or automated alert)
 
@@ -284,9 +284,9 @@ For the frontend (Cloudflare Pages `_headers` file in `frontend/public/`):
 - Require status checks to pass before merge
 
 **Implementation checklist:**
-- [ ] Add `pip-audit` step to Python CI job
-- [ ] Add `npm audit --audit-level=high` step to Node CI job
-- [ ] Add secret scanning action to CI
+- [x] Add `pip-audit` step to Python CI job
+- [x] Add `npm audit --audit-level=high` step to Node CI job
+- [x] Add secret scanning action to CI
 - [ ] Enable branch protection on `main` with required reviews for sensitive paths
 - [ ] Pin third-party GitHub Actions to commit SHAs (not mutable tags)
 
@@ -453,10 +453,10 @@ Close all P0 items.
 - [ ] Deploy CSP in report-only mode; review; enforce
 - [x] Extend rate limiting to all uncovered endpoint groups
 - [x] Add JWKS cache TTL and user cache TTL/LRU
-- [ ] Add negative authorization tests across all resource endpoints
+- [x] Add negative authorization tests across all resource endpoints
 - [ ] Set up log forwarding from Render
 - [ ] Add structured audit logging for mutations and admin access
-- [ ] Add dependency scanning (pip-audit, npm audit) to CI
+- [x] Add dependency scanning (pip-audit, npm audit) to CI
 - [ ] Enable branch protection on `main`
 
 **Exit criteria:** No known high-severity auth/authz gaps. Audit logs flowing to external service.
@@ -488,7 +488,7 @@ Close all P0 items.
 ### Auth and Authorization
 - [x] Clerk JWKS cache has TTL (≤ 1 hour)
 - [x] User cache has TTL and max size (LRU eviction)
-- [ ] Cross-user access negative tests pass for all owned resources
+- [x] Cross-user access negative tests pass for all owned resources
 - [ ] `CLERK_AUDIENCE` and `CLERK_AUTHORIZED_PARTY` set in production env
 
 ### API and Infrastructure
@@ -498,9 +498,9 @@ Close all P0 items.
 - [x] Request body size limit middleware active
 
 ### Secrets and Supply Chain
-- [ ] Secret scanning active in CI; no hardcoded secrets found in repo
+- [x] Secret scanning active in CI; no hardcoded secrets found in repo
 - [ ] Frontend build contains no backend secrets (`grep` check passes)
-- [ ] `pip-audit` and `npm audit` pass in CI with no high-severity findings
+- [x] `pip-audit` and `npm audit` pass in CI with no high-severity findings
 - [ ] Branch protection active on `main` with required reviews for sensitive paths
 
 ### Observability and Recovery

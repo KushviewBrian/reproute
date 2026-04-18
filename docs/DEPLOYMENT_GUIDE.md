@@ -8,6 +8,29 @@ This guide walks you through setting up all external services for ReRoute.
 - Python 3.11+ installed
 - Git repository connected to GitHub
 
+## Production Reliability Baseline (Gate 0/1)
+
+Use this as the required deployment contract before any `main` release:
+
+- `ENVIRONMENT=production`
+- `POC_MODE=false`
+- `DATABASE_TLS_VERIFY=true`
+- `DATABASE_SSL_CA_PEM` populated with the full provider CA chain (PEM text)
+- `DATABASE_TLS_EMERGENCY_INSECURE_OVERRIDE=false` (default/off)
+- `CLERK_JWT_ISSUER` and `CLERK_JWKS_URL` both set and valid
+- `CORS_ALLOW_ORIGINS` includes the exact frontend origin(s), scheme included
+- `VALIDATION_HMAC_SECRET` set (required for `/admin/validation/run-due`)
+
+Post-deploy smoke checks (required):
+
+1. `GET /health` returns `200`.
+2. Route create + lead fetch succeeds.
+3. Today dashboard loads without API network errors.
+4. Saved leads export and route export succeed.
+5. Validation endpoints auth behavior is correct:
+   - user trigger/read works for owned data
+   - admin run-due rejects missing/invalid HMAC headers.
+
 ---
 
 ## 1. Clerk Setup (Authentication)
@@ -152,6 +175,10 @@ Add all these in the **Environment** section:
 ENVIRONMENT=production
 POC_MODE=false
 DATABASE_URL=postgresql+asyncpg://postgres:<YOUR_DB_PASSWORD>@db.<YOUR_PROJECT_REF>.supabase.co:5432/postgres
+DATABASE_TLS_VERIFY=true
+DATABASE_SSL_CA_PEM=<full-pem-chain>
+DATABASE_TLS_EMERGENCY_INSECURE_OVERRIDE=false
+DATABASE_TLS_EMERGENCY_OVERRIDE_SUNSET=2026-06-30
 REDIS_URL=<your-upstash-redis-url>
 SECRET_KEY=<generate-a-long-random-string>
 CORS_ALLOW_ORIGINS=https://your-frontend-domain.com
@@ -162,6 +189,14 @@ CLERK_JWT_ISSUER=https://your-app.clerk.accounts.dev
 CLERK_JWKS_URL=https://your-app.clerk.accounts.dev/.well-known/jwks.json
 CLERK_AUDIENCE=
 CLERK_AUTHORIZED_PARTY=
+ADMIN_IMPORT_SECRET=<admin-import-secret>
+ADMIN_ALLOWED_EMAILS=you@example.com
+ADMIN_IMPORT_ALLOWED_ROOTS=/tmp,/var/data
+VALIDATION_HMAC_SECRET=<shared-hmac-secret>
+VALIDATION_DAILY_CAP=50
+VALIDATION_MONTHLY_CAP=2000
+VALIDATION_PER_USER_DAILY_CAP=15
+VALIDATION_ADMIN_TOKEN_TTL_SECONDS=60
 ```
 
 6. Click **Create Web Service**
@@ -214,6 +249,8 @@ CORS_ALLOW_ORIGINS=https://your-frontend-domain.vercel.app,https://reproute-fron
 3. Test creating a route
 4. Check that geocoding works through Cloudflare Worker
 5. Verify Redis caching is working
+6. Verify `GET https://<backend>/health` returns `200`
+7. Verify one `POST /admin/validation/run-due` call with invalid HMAC returns `401`
 
 ---
 
@@ -239,6 +276,12 @@ CORS_ALLOW_ORIGINS=https://your-frontend-domain.vercel.app,https://reproute-fron
 - Verify Clerk JWT issuer and JWKS URLs are correct
 - Check that JWT template includes `email` claim
 - Ensure frontend has correct Clerk publishable key
+
+### "Network error: unable to reach API":
+- Verify frontend `VITE_API_BASE_URL` points to the backend host
+- Verify backend `CORS_ALLOW_ORIGINS` includes the exact frontend origin
+- Verify backend startup logs show no TLS/JWT/POC guard refusal
+- Verify `DATABASE_SSL_CA_PEM` is present when `DATABASE_TLS_VERIFY=true`
 
 ### "Geocoding not working":
 - Check Cloudflare Worker is deployed: visit the URL directly

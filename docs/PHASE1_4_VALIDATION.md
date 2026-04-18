@@ -2,6 +2,33 @@
 
 This runbook captures repeatable checks for the remaining evidence-heavy items in Phases 1-4.
 
+## Reliability Execution Rules (Gate Policy)
+
+- Every PR merged to `main` must include:
+  - linked roadmap line item
+  - test evidence summary
+  - rollback note
+- No gate is marked complete without committed artifact proof.
+- Evidence entries must include:
+  - command(s) executed
+  - timestamp (UTC)
+  - commit SHA
+  - CI run URL (if applicable)
+  - pass/fail outcome
+
+## Gate Tracker (Apr 20, 2026 → May 1, 2026)
+
+### Gate 0 — Stabilization Baseline + Merge Controls
+
+- [ ] Branch protection + required checks policy verified and documented.
+- [ ] Production env contract documented (`docs/DEPLOYMENT_GUIDE.md`, `docs/REQUIRED_SECRETS.md`).
+- [ ] Post-deploy `/health` + core flow smoke checklist documented.
+
+Evidence links:
+- Commit(s): `TODO`
+- CI run(s): `TODO`
+- Notes: `TODO`
+
 ## Latest Evidence Snapshot (2026-04-17)
 
 - Ingestion QA artifact: `docs/evidence/phase1_ingest_qa_2026-04-17.md`
@@ -17,6 +44,48 @@ This runbook captures repeatable checks for the remaining evidence-heavy items i
 - [ ] Invalid signature / wrong issuer / expired token tests green.
 - [ ] Cross-user access denial tests green for routes, saved leads, notes, export.
 - [ ] CI security scanners green (gitleaks + pip-audit + npm audit).
+- [ ] Admin import allowlist/path/concurrency protections verified.
+- [ ] Validation admin HMAC enforcement verified (`/admin/validation/run-due`).
+- [ ] Production smoke passes under Supabase pooler (route create, lead fetch, today view, exports).
+
+Evidence links:
+- Commit(s): `TODO`
+- CI run(s): `TODO`
+- Notes: `TODO`
+
+## Gate 2 Evidence Checklist (Phase 1 + Phase 3/4)
+
+- [ ] Replace EXPLAIN placeholder with route-specific artifact.
+- [ ] Ingestion QA artifact includes required metrics and p95 context.
+- [ ] 5-route scoring validation artifact committed with `other_unknown_rate`.
+- [ ] Offline reconnect no-loss verification documented (notes + status).
+- [ ] Dedup spot-check evidence documented.
+- [ ] Today dashboard section correctness evidence documented.
+
+Evidence links:
+- Commit(s): `TODO`
+- CI run(s): `TODO`
+- Notes: `TODO`
+
+## Per-PR Evidence Template
+
+```
+Date (UTC):
+PR/Commit:
+Roadmap line item:
+
+Commands run:
+- ...
+
+Results:
+- ...
+
+Rollback note:
+- ...
+
+Linked artifacts:
+- ...
+```
 
 ## 1) Spatial index evidence (`EXPLAIN ANALYZE`)
 

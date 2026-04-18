@@ -1,6 +1,6 @@
 # RepRoute Master Roadmap
 
-Updated: April 17, 2026 (post Gate 2 codebase audit)
+Updated: April 18, 2026 (reliability hardening execution in progress)
 
 ## Purpose
 
@@ -14,6 +14,7 @@ This roadmap is the canonical execution plan for RepRoute. It consolidates and s
 | Dataset expansion and enrichment plan | `docs/datasetexpansion.md` |
 | Product architecture and API design | `docs/design&dev.md` |
 | QA evidence and verification log | `docs/PHASE1_4_VALIDATION.md` |
+| Reliability gate execution checklist | `docs/RELIABILITY_EXECUTION_CHECKLIST.md` |
 
 **If any supporting document conflicts with this file, this roadmap is the source of truth for delivery order and gate criteria.**
 
@@ -47,6 +48,7 @@ RepRoute is a route-aware field sales prospecting platform for B2B reps. Insuran
 - Phase 5 runtime slice in progress: validation trigger/read/admin run-due APIs, queue claim/cap/retry plumbing, and website/phone validation engine wiring
 - Security hardening (partial): request body limit, backend security headers, extended rate limits, Cloudflare Pages `_headers`
 - Security middleware test scaffolding added (`backend/tests/test_security_middleware.py`)
+- Reliability gate documentation baseline added (deployment contract + evidence tracker updates)
 
 ### Confirmed by recent checks
 
@@ -59,12 +61,13 @@ RepRoute is a route-aware field sales prospecting platform for B2B reps. Insuran
 
 - Security P0 is not yet closed: P0-2/3/4 are implemented and P0-1 strict TLS code path is now restored with emergency override controls; verification/sign-off remains open (see Phase 2)
 - Security P1 verification and CI/security operations tasks are still incomplete (see Phase 2)
-- Backend security test execution is incomplete in CI/runtime environment (negative auth + cross-user suite not yet closed)
+- Backend security test coverage has expanded (negative auth + cross-user + admin-import + validation route checks), but CI/runtime evidence sign-off is still open
 - Phase 5 runtime is not complete (scheduler integration, full endpoint verification, and evidence sign-off still open)
 - Dataset enrichment not implemented (see Phase 6)
 - Scoring calibration evidence is incomplete (5-route evidence + `Other/Unknown` threshold sign-off) (see Phase 3)
 - Evidence capture for ingestion QA and scoring validation is incomplete (see Phase 1)
 - Production DB TLS connectivity is restored using CA-chain PEM configuration; remaining work is to document and regression-test this deployment path so it stays stable
+- Branch protection, uptime monitoring, and log forwarding remain external platform tasks not yet evidenced in repo
 
 ---
 
