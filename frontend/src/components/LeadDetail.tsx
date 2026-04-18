@@ -177,14 +177,10 @@ export function LeadDetail({ lead, routeId, token, refreshToken, onClose }: Prop
     setValidationError(null);
     getValidationState(lead.business_id, token)
       .then((data) => { if (!cancelled) setValidation(data); })
-      .catch((err) => {
-        if (!cancelled) {
-          setValidation(null);
-          // 404 = business not in user's saved/route scope yet; not an error to surface
-          if (!(err instanceof Error && err.message.startsWith("404"))) {
-            setValidationError(err instanceof Error ? err.message : "Failed to load validation");
-          }
-        }
+      .catch(() => {
+        if (!cancelled) setValidation(null);
+        // Silently ignore load errors — 404 (not in scope yet) and network errors
+        // (Render cold start) both just show the placeholder
       })
       .finally(() => { if (!cancelled) setValidationLoading(false); });
     return () => { cancelled = true; };
@@ -217,6 +213,10 @@ export function LeadDetail({ lead, routeId, token, refreshToken, onClose }: Prop
     try {
       const freshToken = (refreshToken ? await refreshToken() : token) ?? token;
       if (!freshToken) return;
+      // Wake Render before the heavy POST — cold starts can take 30s+
+      try {
+        await fetch(`${(await import("../api/client")).API_BASE}/health`, { signal: AbortSignal.timeout(35000) });
+      } catch { /* ignore — POST will fail-fast with a clear error if still down */ }
       await triggerValidation(lead.business_id, freshToken);
       // Poll until run is done/failed or 10 attempts (~30s)
       for (let i = 0; i < 10; i++) {
@@ -227,7 +227,13 @@ export function LeadDetail({ lead, routeId, token, refreshToken, onClose }: Prop
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Validation failed";
-      if (!msg.startsWith("404")) setValidationError(msg);
+      if (msg.startsWith("404")) {
+        // not in scope — shouldn't happen if lead is saved, ignore
+      } else if (msg.toLowerCase().includes("network error")) {
+        setValidationError("Server is waking up — wait 30s and try again.");
+      } else {
+        setValidationError(msg);
+      }
     } finally {
       setValidationTriggering(false);
     }

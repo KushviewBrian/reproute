@@ -59,14 +59,13 @@ async def trigger_validation(
         user_id=user.id,
         requested_checks=payload.requested_checks,
     )
-    # Process inline but with a hard deadline so the HTTP response always returns promptly.
-    # If the deadline is exceeded the run stays queued for the cron to pick up.
+    # Process synchronously but non-blocking with a short deadline.
+    # Returns immediately with status=queued if it takes too long — cron picks it up.
     try:
-        run, _ = await asyncio.wait_for(
-            asyncio.shield(asyncio.ensure_future(process_run_by_id(db, run.id))),
-            timeout=20.0,
-        )
-    except (asyncio.TimeoutError, Exception):
+        run, _ = await asyncio.wait_for(process_run_by_id(db, run.id), timeout=15.0)
+    except asyncio.TimeoutError:
+        pass
+    except Exception:
         pass
     return TriggerValidationResponse(run_id=run.id, status=run.status)
 
