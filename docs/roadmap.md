@@ -1,6 +1,6 @@
 # RepRoute Master Roadmap
 
-Updated: April 18, 2026 (reliability hardening execution in progress)
+Updated: April 18, 2026 (reliability hardening wave active)
 
 ## Purpose
 
@@ -54,6 +54,7 @@ RepRoute is a route-aware field sales prospecting platform for B2B reps. Insuran
 - Reliability process artifacts added: PR gate template and gate closeout template
 - Validation runtime hardening added: stricter HMAC parsing and weighted confidence consistency
 - Security/runtime test coverage expanded: admin import hardening, validation routes, HMAC/cap edge paths
+- CI security workflow hardened for gitleaks push-range scans (`checkout fetch-depth: 0`)
 
 ### Confirmed by recent checks
 
@@ -145,7 +146,7 @@ The route geometry, corridor query, and Overture ingestion pipeline are implemen
 
 ### Phase 2 — Security Lockdown (MVP Critical)
 
-**Status: In progress — P0-1/2/3/4 code landed with emergency controls + key P1 controls landed + test scaffolding added; verification/sign-off incomplete**
+**Status: In progress — P0-1/2/3/4 code landed with emergency controls + key P1 controls landed + expanded security/runtime tests; verification/sign-off incomplete**
 
 This is the highest-risk open work. All P0 items must close before pilot traffic. Security work that is backend-only can be parallelized against Phase 3 frontend work.
 
