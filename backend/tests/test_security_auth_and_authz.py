@@ -177,6 +177,40 @@ async def test_startup_rejects_insecure_tls_in_production(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_startup_rejects_missing_jwks_url_in_production(monkeypatch):
+    settings = get_settings()
+    original = _snapshot_settings(settings)
+    settings.environment = "production"
+    settings.poc_mode = False
+    settings.clerk_jwks_url = ""
+    settings.clerk_jwt_issuer = "https://issuer.test"
+    settings.database_tls_emergency_insecure_override = False
+    monkeypatch.setattr("app.main.is_db_tls_config_secure", lambda: True)
+    try:
+        with pytest.raises(RuntimeError, match="CLERK_JWKS_URL"):
+            await startup()
+    finally:
+        _restore_settings(settings, original)
+
+
+@pytest.mark.asyncio
+async def test_startup_rejects_missing_jwt_issuer_in_production(monkeypatch):
+    settings = get_settings()
+    original = _snapshot_settings(settings)
+    settings.environment = "production"
+    settings.poc_mode = False
+    settings.clerk_jwks_url = "https://example.test/jwks"
+    settings.clerk_jwt_issuer = ""
+    settings.database_tls_emergency_insecure_override = False
+    monkeypatch.setattr("app.main.is_db_tls_config_secure", lambda: True)
+    try:
+        with pytest.raises(RuntimeError, match="CLERK_JWT_ISSUER"):
+            await startup()
+    finally:
+        _restore_settings(settings, original)
+
+
+@pytest.mark.asyncio
 async def test_startup_allows_emergency_tls_override_before_sunset(monkeypatch):
     settings = get_settings()
     original = _snapshot_settings(settings)

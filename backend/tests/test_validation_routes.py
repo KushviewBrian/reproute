@@ -85,6 +85,22 @@ async def test_trigger_validation_rejects_when_cap_exceeded(monkeypatch) -> None
     assert exc.value.status_code == 429
 
 
+@pytest.mark.asyncio
+async def test_trigger_validation_returns_503_when_counter_unavailable(monkeypatch) -> None:
+    monkeypatch.setattr(validation_routes, "enforce_rate_limit", _noop_async)
+    monkeypatch.setattr(validation_routes, "user_can_access_business", _true_async)
+    monkeypatch.setattr(validation_routes, "reserve_validation_caps", _counter_unavailable_async)
+    user = User(id=uuid.uuid4(), email="owner@example.com")
+    with pytest.raises(HTTPException) as exc:
+        await validation_routes.trigger_validation(
+            business_id=uuid.uuid4(),
+            payload=TriggerValidationRequest(requested_checks=["website"]),
+            user=user,
+            db=SimpleNamespace(),
+        )
+    assert exc.value.status_code == 503
+
+
 async def _false_async(*_args, **_kwargs):
     return False
 
@@ -95,6 +111,10 @@ async def _true_async(*_args, **_kwargs):
 
 async def _cap_exceeded_async(*_args, **_kwargs):
     raise PermissionError("Validation cap exceeded")
+
+
+async def _counter_unavailable_async(*_args, **_kwargs):
+    raise RuntimeError("Validation rate counter unavailable")
 
 
 @pytest.mark.asyncio
@@ -108,3 +128,72 @@ async def test_read_validation_state_rejects_inaccessible_business(monkeypatch) 
             db=SimpleNamespace(),
         )
     assert exc.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_trigger_validation_success_runs_and_returns_run_id(monkeypatch) -> None:
+    monkeypatch.setattr(validation_routes, "enforce_rate_limit", _noop_async)
+    monkeypatch.setattr(validation_routes, "user_can_access_business", _true_async)
+    monkeypatch.setattr(validation_routes, "reserve_validation_caps", _noop_async)
+    monkeypatch.setattr(validation_routes, "enqueue_validation_run", _enqueue_run_stub)
+    monkeypatch.setattr(validation_routes, "process_run_by_id", _process_run_stub)
+
+    run_id = uuid.uuid4()
+    user = User(id=uuid.uuid4(), email="owner@example.com")
+    resp = await validation_routes.trigger_validation(
+        business_id=run_id,
+        payload=TriggerValidationRequest(requested_checks=["website"]),
+        user=user,
+        db=SimpleNamespace(),
+    )
+    assert resp.run_id == run_id
+    assert resp.status == "done"
+
+
+@pytest.mark.asyncio
+async def test_read_validation_state_success_includes_overall_label(monkeypatch) -> None:
+    monkeypatch.setattr(validation_routes, "user_can_access_business", _true_async)
+    monkeypatch.setattr(validation_routes, "get_validation_state", _get_state_stub)
+
+    user = User(id=uuid.uuid4(), email="owner@example.com")
+    resp = await validation_routes.read_validation_state(
+        business_id=uuid.uuid4(),
+        user=user,
+        db=SimpleNamespace(),
+    )
+    assert resp.overall_label == "Mostly valid"
+    assert resp.run is not None
+    assert len(resp.fields) == 1
+
+
+async def _enqueue_run_stub(_db, *, business_id, user_id, requested_checks):
+    _ = user_id, requested_checks
+    return SimpleNamespace(id=business_id, status="queued")
+
+
+async def _process_run_stub(_db, _run_id):
+    return SimpleNamespace(id=_run_id, status="done"), []
+
+
+async def _get_state_stub(_db, _business_id):
+    run = SimpleNamespace(
+        id=uuid.uuid4(),
+        business_id=uuid.uuid4(),
+        status="done",
+        requested_checks=["website", "phone"],
+        started_at=None,
+        finished_at=None,
+        error_message=None,
+    )
+    field = SimpleNamespace(
+        field_name="website",
+        state="valid",
+        confidence=85.0,
+        failure_class=None,
+        value_current="https://example.com",
+        value_normalized="https://example.com",
+        evidence_json={"status_code": 200},
+        last_checked_at=None,
+        next_check_at=None,
+    )
+    return run, [field], 72.5, "Mostly valid"
