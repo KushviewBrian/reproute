@@ -36,3 +36,19 @@ def test_request_body_limit_enforced() -> None:
         assert response.json().get("detail") == "Request body too large"
     finally:
         settings.request_body_limit_bytes = original_limit
+
+
+def test_audit_log_emitted_for_auth_denied_mutation(caplog) -> None:
+    client = TestClient(app)
+    caplog.set_level("INFO")
+    response = client.post("/routes", json={})
+    assert response.status_code in {401, 422}
+    assert any("audit_event" in record.getMessage() and "path=/routes" in record.getMessage() for record in caplog.records)
+
+
+def test_audit_log_skips_health_endpoint(caplog) -> None:
+    client = TestClient(app)
+    caplog.set_level("INFO")
+    response = client.get("/health")
+    assert response.status_code == 200
+    assert not any("audit_event" in record.getMessage() and "path=/health" in record.getMessage() for record in caplog.records)

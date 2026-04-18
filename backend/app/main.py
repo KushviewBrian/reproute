@@ -28,6 +28,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+def _should_emit_audit_log(method: str, path: str, status_code: int) -> bool:
+    if path.startswith("/health"):
+        return False
+    if path.startswith("/admin"):
+        return True
+    if method in {"POST", "PUT", "PATCH", "DELETE"}:
+        return True
+    if status_code in {401, 403, 429}:
+        return True
+    return False
+
 def _apply_security_headers(response: Response) -> Response:
     settings = get_settings()
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
@@ -52,7 +64,17 @@ async def request_size_and_security_headers(request: Request, call_next):
             response = JSONResponse(status_code=413, content={"detail": "Request body too large"})
             return _apply_security_headers(response)
     response = await call_next(request)
-    return _apply_security_headers(response)
+    response = _apply_security_headers(response)
+    if _should_emit_audit_log(request.method, request.url.path, response.status_code):
+        client_host = request.client.host if request.client else "unknown"
+        logger.info(
+            "audit_event method=%s path=%s status=%s client=%s",
+            request.method,
+            request.url.path,
+            response.status_code,
+            client_host,
+        )
+    return response
 
 
 @app.on_event("startup")
