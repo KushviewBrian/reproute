@@ -176,7 +176,15 @@ export function LeadDetail({ lead, routeId, token, onClose }: Props) {
     setValidationError(null);
     getValidationState(lead.business_id, token)
       .then((data) => { if (!cancelled) setValidation(data); })
-      .catch(() => { if (!cancelled) setValidation(null); })
+      .catch((err) => {
+        if (!cancelled) {
+          setValidation(null);
+          // 404 = business not in user's saved/route scope yet; not an error to surface
+          if (!(err instanceof Error && err.message.startsWith("404"))) {
+            setValidationError(err instanceof Error ? err.message : "Failed to load validation");
+          }
+        }
+      })
       .finally(() => { if (!cancelled) setValidationLoading(false); });
     return () => { cancelled = true; };
   }, [lead?.business_id, token]);
@@ -210,7 +218,8 @@ export function LeadDetail({ lead, routeId, token, onClose }: Props) {
       const data = await getValidationState(lead.business_id, token);
       setValidation(data);
     } catch (err) {
-      setValidationError(err instanceof Error ? err.message : "Validation failed");
+      const msg = err instanceof Error ? err.message : "Validation failed";
+      if (!msg.startsWith("404")) setValidationError(msg);
     } finally {
       setValidationTriggering(false);
     }
@@ -485,7 +494,7 @@ export function LeadDetail({ lead, routeId, token, onClose }: Props) {
           ) : (
             !validationLoading && (
               <p style={{ fontSize: "0.75rem", color: "var(--gray-400)" }}>
-                {token ? "No validation data yet. Click \"Validate now\" to check website and phone." : "Sign in to validate this lead."}
+                {token ? "No validation data yet. Save this lead first, then click \"Validate now\"." : "Sign in to validate this lead."}
               </p>
             )
           )}
