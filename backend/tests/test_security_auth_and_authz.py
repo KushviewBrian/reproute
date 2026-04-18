@@ -218,9 +218,11 @@ async def test_startup_allows_emergency_tls_override_before_sunset(monkeypatch):
     settings.poc_mode = False
     settings.clerk_jwks_url = "https://example.test/jwks"
     settings.clerk_jwt_issuer = "https://issuer.test"
+    settings.validation_hmac_secret = "test-secret"
     settings.database_tls_emergency_insecure_override = True
     settings.database_tls_emergency_override_sunset = date.today() + timedelta(days=10)
     monkeypatch.setattr("app.main.is_db_tls_config_secure", lambda: False)
+    monkeypatch.setattr("app.main.cors_origin_regex", None)
     try:
         await startup()
     finally:
