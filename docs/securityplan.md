@@ -322,7 +322,7 @@ For the frontend (Cloudflare Pages `_headers` file in `frontend/public/`):
 
 **Implementation checklist:**
 - [ ] Set up log forwarding from Render to external log service
-- [ ] Add structured audit log middleware or per-endpoint log calls for events above
+- [x] Add structured audit log middleware or per-endpoint log calls for events above
 - [ ] Set up uptime monitoring for `/health` with alerting (e.g., UptimeRobot free tier)
 - [ ] Configure alert rules for auth/rate-limit spikes
 
@@ -443,7 +443,7 @@ Close all P0 items.
 - [x] Add startup validator: fail if required auth env vars are missing in production
 - [x] Add `poc_mode` production guard to startup (P0-4)
 - [x] Add admin email allowlist + `parquet_path` validation (P0-3)
-- [ ] Add secret scanning to CI
+- [x] Add secret scanning to CI
 
 **Exit criteria:** All P0 items verified by test and production config validation, then deployed to production.
 
@@ -455,7 +455,7 @@ Close all P0 items.
 - [x] Add JWKS cache TTL and user cache TTL/LRU
 - [x] Add negative authorization tests across all resource endpoints
 - [ ] Set up log forwarding from Render
-- [ ] Add structured audit logging for mutations and admin access
+- [x] Add structured audit logging for mutations and admin access
 - [x] Add dependency scanning (pip-audit, npm audit) to CI
 - [ ] Enable branch protection on `main`
 

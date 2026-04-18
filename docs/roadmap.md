@@ -48,6 +48,7 @@ RepRoute is a route-aware field sales prospecting platform for B2B reps. Insuran
 - Phase 5 runtime slice in progress: validation trigger/read/admin run-due APIs, queue claim/cap/retry plumbing, and website/phone validation engine wiring
 - Security hardening (partial): request body limit, backend security headers, extended rate limits, Cloudflare Pages `_headers`
 - Security middleware test scaffolding added (`backend/tests/test_security_middleware.py`)
+- Structured audit logging added for mutation/admin/auth-denial events (middleware-based)
 - Reliability gate documentation baseline added (deployment contract + evidence tracker updates)
 
 ### Confirmed by recent checks
