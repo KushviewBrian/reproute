@@ -25,6 +25,7 @@ class ValidationFieldState(BaseModel):
     last_checked_at: datetime | None = None
     next_check_at: datetime | None = None
     evidence_json: dict | None = None
+    pinned_by_user: bool = False
 
 
 class ValidationRunState(BaseModel):

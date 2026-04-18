@@ -1,4 +1,4 @@
-import type { Lead } from "../api/client";
+import type { Lead, ValidationStateResponse } from "../api/client";
 import type React from "react";
 import { useState } from "react";
 
@@ -10,6 +10,7 @@ type Props = {
   onSelect: (lead: Lead) => void;
   onAddStop: (lead: Lead) => void;
   corridorMiles: string;
+  validationStates?: Record<string, ValidationStateResponse>;
 };
 
 function scoreBadgeClass(score: number) {
@@ -32,6 +33,16 @@ function IconBookmarkPlus() {
   );
 }
 
+function validationBadgeProps(label: string): { className: string; text: string } {
+  switch (label) {
+    case "Validated":     return { className: "val-badge val-badge--validated",  text: "✓ Validated" };
+    case "Mostly valid":  return { className: "val-badge val-badge--mostly",     text: "~ Mostly valid" };
+    case "Needs review":  return { className: "val-badge val-badge--review",     text: "~ Review" };
+    case "Low confidence":return { className: "val-badge val-badge--low",        text: "✗ Low" };
+    default:              return { className: "val-badge val-badge--unchecked",  text: "· Unchecked" };
+  }
+}
+
 function IconNavigation() {
   return (
     <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -40,7 +51,7 @@ function IconNavigation() {
   );
 }
 
-export function LeadList({ leads, selectedLead, onSave, onSaveWithNote, onSelect, onAddStop, corridorMiles }: Props) {
+export function LeadList({ leads, selectedLead, onSave, onSaveWithNote, onSelect, onAddStop, corridorMiles, validationStates }: Props) {
   const [draftNotes, setDraftNotes] = useState<Record<string, string>>({});
   const [tooltipLeadId, setTooltipLeadId] = useState<string | null>(null);
 
@@ -94,13 +105,20 @@ export function LeadList({ leads, selectedLead, onSave, onSaveWithNote, onSelect
           >
             <div className="lead-card-top">
               <span className="lead-name">{lead.name}</span>
-              <span
-                className={scoreBadgeClass(lead.final_score)}
-                onClick={(e) => handleScoreBadgeClick(lead, e)}
-                title="Tap for score explanation"
-              >
-                {lead.final_score}
-              </span>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.3rem", flexShrink: 0 }}>
+                {(() => {
+                  const vs = validationStates?.[lead.business_id];
+                  const { className, text } = validationBadgeProps(vs?.overall_label ?? "Unchecked");
+                  return <span className={className} title={vs?.overall_confidence != null ? `Confidence: ${Math.round(vs.overall_confidence)}%` : undefined}>{text}</span>;
+                })()}
+                <span
+                  className={scoreBadgeClass(lead.final_score)}
+                  onClick={(e) => handleScoreBadgeClick(lead, e)}
+                  title="Tap for score explanation"
+                >
+                  {lead.final_score}
+                </span>
+              </div>
             </div>
             {tooltipLeadId === lead.business_id && (
               <div
@@ -141,7 +159,7 @@ export function LeadList({ leads, selectedLead, onSave, onSaveWithNote, onSelect
             </p>
 
             <p className="lead-explanation" style={{ marginTop: "-0.1rem" }}>
-              Contact data: {lead.phone ? "Phone" : "No phone"} · {lead.website ? "Website" : "No website"} · Confidence: Unchecked
+              Contact data: {lead.phone ? "Phone" : "No phone"} · {lead.website ? "Website" : "No website"} · Confidence: {validationStates?.[lead.business_id]?.overall_label ?? "Unchecked"}
             </p>
 
             <p className="lead-explanation" style={{ marginTop: "-0.1rem" }}>

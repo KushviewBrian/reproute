@@ -1,6 +1,17 @@
 import { useEffect, useState } from "react";
 
-import { createNote, listNotes, saveLead, type Lead, type SavedLead, updateSavedLead } from "../api/client";
+import {
+  createNote,
+  getValidationState,
+  listNotes,
+  pinValidationField,
+  saveLead,
+  triggerValidation,
+  type Lead,
+  type SavedLead,
+  type ValidationStateResponse,
+  updateSavedLead,
+} from "../api/client";
 import {
   enqueueNote,
   enqueueStatusChange,
@@ -140,6 +151,10 @@ export function LeadDetail({ lead, routeId, token, onClose }: Props) {
   const [status, setStatus] = useState("saved");
   const [queueCount, setQueueCount] = useState(0);
   const [saving, setSaving] = useState(false);
+  const [validation, setValidation] = useState<ValidationStateResponse | null>(null);
+  const [validationLoading, setValidationLoading] = useState(false);
+  const [validationTriggering, setValidationTriggering] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!lead) return;
@@ -150,6 +165,21 @@ export function LeadDetail({ lead, routeId, token, onClose }: Props) {
     setNextAction("");
     setQueueCount(getQueuedCount());
   }, [lead, token]);
+
+  useEffect(() => {
+    if (!lead || !token) {
+      setValidation(null);
+      return;
+    }
+    let cancelled = false;
+    setValidationLoading(true);
+    setValidationError(null);
+    getValidationState(lead.business_id, token)
+      .then((data) => { if (!cancelled) setValidation(data); })
+      .catch(() => { if (!cancelled) setValidation(null); })
+      .finally(() => { if (!cancelled) setValidationLoading(false); });
+    return () => { cancelled = true; };
+  }, [lead?.business_id, token]);
 
   useEffect(() => {
     async function flushWhenOnline() {
@@ -170,6 +200,32 @@ export function LeadDetail({ lead, routeId, token, onClose }: Props) {
   }, [lead, token]);
 
   if (!lead) return null;
+
+  async function handleValidate() {
+    if (!lead || !token) return;
+    setValidationTriggering(true);
+    setValidationError(null);
+    try {
+      await triggerValidation(lead.business_id, token);
+      const data = await getValidationState(lead.business_id, token);
+      setValidation(data);
+    } catch (err) {
+      setValidationError(err instanceof Error ? err.message : "Validation failed");
+    } finally {
+      setValidationTriggering(false);
+    }
+  }
+
+  async function handlePin(fieldName: string, pinned: boolean) {
+    if (!lead || !token) return;
+    try {
+      await pinValidationField(lead.business_id, fieldName, pinned, token);
+      const data = await getValidationState(lead.business_id, token);
+      setValidation(data);
+    } catch {
+      // pin failure is non-critical; silently ignore
+    }
+  }
 
   async function saveWithStatus() {
     if (!lead) return;
@@ -312,7 +368,8 @@ export function LeadDetail({ lead, routeId, token, onClose }: Props) {
         <div className="detail-section">
           <p className="detail-section-title">Score breakdown</p>
           <p style={{ fontSize: "0.72rem", color: "var(--gray-500)", marginBottom: "0.25rem" }}>
-            Confidence status: Unchecked
+            Confidence: {validation?.overall_label ?? (validationLoading ? "Loading…" : "Unchecked")}
+            {validation?.overall_confidence != null ? ` (${Math.round(validation.overall_confidence)}%)` : ""}
           </p>
           {lead.fit_score != null && lead.distance_score != null && lead.actionability_score != null ? (
             <>
@@ -366,6 +423,72 @@ export function LeadDetail({ lead, routeId, token, onClose }: Props) {
               Save
             </button>
           </div>
+        </div>
+
+        {/* Validation evidence drawer */}
+        <div className="detail-section detail-full-col">
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <p className="detail-section-title">Data validation</p>
+            {token && (
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={handleValidate}
+                disabled={validationTriggering || !lead}
+                style={{ fontSize: "0.7rem", padding: "0.2rem 0.5rem" }}
+              >
+                {validationTriggering ? <span className="spinner" /> : "Validate now"}
+              </button>
+            )}
+          </div>
+          {validationError && (
+            <p style={{ fontSize: "0.7rem", color: "#b42318" }}>{validationError}</p>
+          )}
+          {validation && validation.fields.length > 0 ? (
+            <div className="val-field-list">
+              {validation.fields.map((f) => (
+                <div key={f.field_name} className="val-field-row">
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", flexWrap: "wrap" }}>
+                    <span className="val-field-name">{f.field_name}</span>
+                    <span className={`val-state-chip val-state-chip--${f.state ?? "unknown"}`}>
+                      {f.state ?? "unknown"}
+                    </span>
+                    {f.confidence != null && (
+                      <span style={{ fontSize: "0.68rem", color: "var(--gray-500)" }}>{Math.round(f.confidence)}%</span>
+                    )}
+                    {f.failure_class && (
+                      <span style={{ fontSize: "0.65rem", color: "var(--gray-400)" }}>({f.failure_class})</span>
+                    )}
+                  </div>
+                  {f.value_normalized && f.value_normalized !== f.value_current && (
+                    <p style={{ fontSize: "0.67rem", color: "var(--gray-500)", marginTop: "0.15rem" }}>
+                      Normalized: {f.value_normalized}
+                    </p>
+                  )}
+                  {f.last_checked_at && (
+                    <p style={{ fontSize: "0.65rem", color: "var(--gray-400)", marginTop: "0.1rem" }}>
+                      Checked {new Date(f.last_checked_at).toLocaleDateString()}
+                      {f.next_check_at ? ` · Next ${new Date(f.next_check_at).toLocaleDateString()}` : ""}
+                    </p>
+                  )}
+                  {token && (
+                    <button
+                      className="btn-link"
+                      style={{ fontSize: "0.65rem", marginTop: "0.15rem" }}
+                      onClick={() => handlePin(f.field_name, !f.pinned_by_user)}
+                    >
+                      {f.pinned_by_user ? "Unpin (auto-recheck enabled)" : "Pin (skip auto-recheck)"}
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            !validationLoading && (
+              <p style={{ fontSize: "0.75rem", color: "var(--gray-400)" }}>
+                {token ? "No validation data yet. Click \"Validate now\" to check website and phone." : "Sign in to validate this lead."}
+              </p>
+            )
+          )}
         </div>
 
         {/* Notes */}

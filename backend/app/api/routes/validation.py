@@ -92,6 +92,7 @@ async def read_validation_state(
                 evidence_json=f.evidence_json,
                 last_checked_at=f.last_checked_at,
                 next_check_at=f.next_check_at,
+                pinned_by_user=bool(f.pinned_by_user),
             )
             for f in fields
         ],

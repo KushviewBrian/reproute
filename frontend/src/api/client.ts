@@ -238,6 +238,58 @@ export async function downloadRouteCsv(routeId: string, token?: string, savedOnl
   URL.revokeObjectURL(href);
 }
 
+// ── Validation ────────────────────────────────────────────────────────────────
+
+export type ValidationFieldState = {
+  field_name: string;
+  state: string | null;
+  confidence: number | null;
+  failure_class: string | null;
+  value_current: string | null;
+  value_normalized: string | null;
+  last_checked_at: string | null;
+  next_check_at: string | null;
+  evidence_json: Record<string, unknown> | null;
+  pinned_by_user: boolean;
+};
+
+export type ValidationRunState = {
+  run_id: string;
+  business_id: string;
+  status: string;
+  requested_checks: string[] | null;
+  started_at: string | null;
+  finished_at: string | null;
+  error_message: string | null;
+};
+
+export type ValidationStateResponse = {
+  run: ValidationRunState | null;
+  fields: ValidationFieldState[];
+  overall_confidence: number | null;
+  overall_label: string;
+};
+
+export async function getValidationState(businessId: string, token?: string): Promise<ValidationStateResponse> {
+  return req<ValidationStateResponse>(`/leads/${encodeURIComponent(businessId)}/validation`, {}, token);
+}
+
+export async function triggerValidation(businessId: string, token?: string): Promise<{ run_id: string; status: string }> {
+  return req<{ run_id: string; status: string }>(
+    `/leads/${encodeURIComponent(businessId)}/validate`,
+    { method: "POST", body: JSON.stringify({ requested_checks: ["website", "phone"] }) },
+    token,
+  );
+}
+
+export async function pinValidationField(businessId: string, fieldName: string, pinned: boolean, token?: string): Promise<{ field_name: string; pinned_by_user: boolean }> {
+  return req<{ field_name: string; pinned_by_user: boolean }>(
+    `/leads/${encodeURIComponent(businessId)}/validation/${encodeURIComponent(fieldName)}`,
+    { method: "PATCH", body: JSON.stringify({ pinned }) },
+    token,
+  );
+}
+
 export async function downloadSavedLeadsCsv(token?: string): Promise<void> {
   const headers: Record<string, string> = {};
   if (token) headers.Authorization = `Bearer ${token}`;

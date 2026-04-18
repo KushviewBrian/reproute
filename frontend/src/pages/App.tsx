@@ -1,7 +1,7 @@
 import { SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/clerk-react";
 import { useCallback, useEffect, useState } from "react";
 
-import { createNote, fetchLeads, patchRoute, saveLead, type Lead } from "../api/client";
+import { createNote, fetchLeads, getValidationState, patchRoute, saveLead, type Lead, type ValidationStateResponse } from "../api/client";
 import { LeadDetail, leadToDetail, savedLeadToDetail, type DetailLead } from "../components/LeadDetail";
 import { LeadList } from "../components/LeadList";
 import { MapPanel } from "../components/MapPanel";
@@ -86,6 +86,7 @@ export function App({ token }: AppProps) {
   const [savedCount, setSavedCount] = useState(0);
   const [showInstallHint, setShowInstallHint] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [validationStates, setValidationStates] = useState<Record<string, ValidationStateResponse>>({});
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -131,6 +132,20 @@ export function App({ token }: AppProps) {
         setLeads(sorted);
         cacheRouteLeads(id, sorted);
         setCacheMeta(null);
+        if (token) {
+          const leadsWithWebsite = sorted.filter((l) => l.website);
+          Promise.allSettled(
+            leadsWithWebsite.map((l) =>
+              getValidationState(l.business_id, token).then((vs) => ({ id: l.business_id, vs })),
+            ),
+          ).then((results) => {
+            const map: Record<string, ValidationStateResponse> = {};
+            for (const r of results) {
+              if (r.status === "fulfilled") map[r.value.id] = r.value.vs;
+            }
+            setValidationStates(map);
+          });
+        }
       } catch (err) {
         const cached = readCachedRouteLeads(id);
         if (cached) {
@@ -400,6 +415,7 @@ export function App({ token }: AppProps) {
                 onSelect={(l) => setSelectedLead(leadToDetail(l))}
                 onAddStop={onAddStop}
                 corridorMiles={corridorMiles}
+                validationStates={validationStates}
               />
             </>
           )}
@@ -428,7 +444,7 @@ export function App({ token }: AppProps) {
           routeGeoJson={routeGeoJson}
           leads={leads}
           selectedLead={selectedLead}
-          onSelectLead={setSelectedLead}
+          onSelectLead={(l) => setSelectedLead(leadToDetail(l))}
         />
       </div>
 

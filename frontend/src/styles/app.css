@@ -1086,6 +1086,64 @@ body { min-height: 100dvh; }
   margin-bottom: 0.625rem; /* align with bottom of input */
 }
 
+/* ─── Validation badges (lead card) ─────────────────────────────────────── */
+.val-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1rem 0.45rem;
+  border-radius: 100px;
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: .02em;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+
+.val-badge--validated   { background: #dcfce7; color: #15803d; border-color: #bbf7d0; }
+.val-badge--mostly      { background: #fef9c3; color: #a16207; border-color: #fde68a; }
+.val-badge--review      { background: #fef3c7; color: #b45309; border-color: #fcd34d; }
+.val-badge--low         { background: #fee2e2; color: #b91c1c; border-color: #fca5a5; }
+.val-badge--unchecked   { background: var(--gray-100); color: var(--gray-400); border-color: var(--gray-200); }
+
+/* ─── Validation state chips (evidence drawer) ───────────────────────────── */
+.val-state-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1rem 0.4rem;
+  border-radius: 100px;
+  font-size: 0.63rem;
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+
+.val-state-chip--valid    { background: #dcfce7; color: #15803d; border-color: #bbf7d0; }
+.val-state-chip--warning  { background: #fef9c3; color: #a16207; border-color: #fde68a; }
+.val-state-chip--invalid  { background: #fee2e2; color: #b91c1c; border-color: #fca5a5; }
+.val-state-chip--unknown  { background: var(--gray-100); color: var(--gray-500); border-color: var(--gray-200); }
+
+/* ─── Validation evidence field list ────────────────────────────────────── */
+.val-field-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.val-field-row {
+  padding: 0.45rem 0.6rem;
+  background: var(--gray-50);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+}
+
+.val-field-name {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--gray-700);
+  text-transform: capitalize;
+}
+
 /* ─── Responsive: mobile stack ───────────────────────────────────────────── */
 @media (max-width: 767px) {
   .app-body {
