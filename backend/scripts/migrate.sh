@@ -28,14 +28,14 @@ with engine.connect() as conn:
     ))
     exists = result.scalar()
     if not exists:
-        print("alembic_version not found — stamping at 0003_saved_lead_follow_up_fields")
+        print("alembic_version not found — stamping at 0002_import_jobs")
         sys.exit(1)
     print("alembic_version exists — skipping stamp")
     sys.exit(0)
 EOF
 
 if [ $? -ne 0 ]; then
-    alembic stamp 0003_saved_lead_follow_up_fields
+    alembic stamp 0002_import_jobs
 fi
 
 alembic upgrade head

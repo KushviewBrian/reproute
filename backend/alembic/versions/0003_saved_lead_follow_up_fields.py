@@ -18,11 +18,16 @@ def upgrade() -> None:
     op.execute(
         """
         ALTER TABLE saved_lead
-        ADD COLUMN next_follow_up_at TIMESTAMPTZ,
-        ADD COLUMN last_contact_attempt_at TIMESTAMPTZ
+        ADD COLUMN IF NOT EXISTS next_follow_up_at TIMESTAMPTZ,
+        ADD COLUMN IF NOT EXISTS last_contact_attempt_at TIMESTAMPTZ
         """
     )
-    op.execute("CREATE INDEX idx_saved_lead_next_follow_up_at ON saved_lead (next_follow_up_at)")
+    op.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_saved_lead_next_follow_up_at
+        ON saved_lead (next_follow_up_at)
+        """
+    )
 
 
 def downgrade() -> None:

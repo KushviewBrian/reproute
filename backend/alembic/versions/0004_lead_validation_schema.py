@@ -17,7 +17,7 @@ depends_on = None
 def upgrade() -> None:
     op.execute(
         """
-        CREATE TABLE lead_validation_run (
+        CREATE TABLE IF NOT EXISTS lead_validation_run (
           id UUID PRIMARY KEY,
           business_id UUID NOT NULL REFERENCES business(id),
           user_id UUID REFERENCES "user"(id),
@@ -31,12 +31,12 @@ def upgrade() -> None:
         """
     )
     op.execute(
-        "CREATE INDEX idx_lead_validation_run_business_created ON lead_validation_run (business_id, created_at DESC)"
+        "CREATE INDEX IF NOT EXISTS idx_lead_validation_run_business_created ON lead_validation_run (business_id, created_at DESC)"
     )
 
     op.execute(
         """
-        CREATE TABLE lead_field_validation (
+        CREATE TABLE IF NOT EXISTS lead_field_validation (
           id UUID PRIMARY KEY,
           business_id UUID NOT NULL REFERENCES business(id),
           field_name TEXT NOT NULL,
@@ -55,12 +55,12 @@ def upgrade() -> None:
         )
         """
     )
-    op.execute("CREATE INDEX idx_lead_field_validation_business_id ON lead_field_validation (business_id)")
-    op.execute("CREATE INDEX idx_lead_field_validation_next_check_at ON lead_field_validation (next_check_at)")
+    op.execute("CREATE INDEX IF NOT EXISTS idx_lead_field_validation_business_id ON lead_field_validation (business_id)")
+    op.execute("CREATE INDEX IF NOT EXISTS idx_lead_field_validation_next_check_at ON lead_field_validation (next_check_at)")
 
     op.execute(
         """
-        CREATE TABLE lead_expansion_candidate (
+        CREATE TABLE IF NOT EXISTS lead_expansion_candidate (
           id UUID PRIMARY KEY,
           source_business_id UUID NOT NULL REFERENCES business(id),
           candidate_payload JSONB NOT NULL,
@@ -73,8 +73,8 @@ def upgrade() -> None:
         )
         """
     )
-    op.execute("CREATE INDEX idx_lead_expansion_candidate_status ON lead_expansion_candidate (status)")
-    op.execute("CREATE INDEX idx_lead_expansion_candidate_expires_at ON lead_expansion_candidate (expires_at)")
+    op.execute("CREATE INDEX IF NOT EXISTS idx_lead_expansion_candidate_status ON lead_expansion_candidate (status)")
+    op.execute("CREATE INDEX IF NOT EXISTS idx_lead_expansion_candidate_expires_at ON lead_expansion_candidate (expires_at)")
 
 
 def downgrade() -> None:
