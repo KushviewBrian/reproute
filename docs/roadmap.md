@@ -55,6 +55,10 @@ RepRoute is a route-aware field sales prospecting platform for B2B reps. Insuran
 - Validation runtime hardening added: stricter HMAC parsing and weighted confidence consistency
 - Security/runtime test coverage expanded: admin import hardening, validation routes, HMAC/cap edge paths
 - CI security workflow hardened for gitleaks push-range scans (`checkout fetch-depth: 0`)
+- Phase 2 startup hardening: `VALIDATION_HMAC_SECRET` now required at production startup (raises `RuntimeError` on missing); `CORS_ALLOW_ORIGIN_REGEX` compiled at startup to catch malformed regex before traffic begins
+- Phase 2 rate-limit observability: Redis unavailability in production now emits a `CRITICAL` log (`rate_limit_redis_unavailable`) instead of silently bypassing; fail-open behavior retained for reliability but is now auditable
+- Phase 2 test coverage: startup tests added for missing HMAC secret and invalid CORS regex; cross-user validation access denial explicitly tested (trigger + read endpoints)
+- Phase 1 stale-record observability: ingest script now logs `stale_record_update` line with `refresh_started_at` timestamp and row count immediately after marking — provides per-refresh audit trail in CI/ops logs
 
 ### Confirmed by recent checks
 
@@ -66,8 +70,8 @@ RepRoute is a route-aware field sales prospecting platform for B2B reps. Insuran
 ### Confirmed open gaps (must close before pilot)
 
 - Security P0 is not yet closed: P0-2/3/4 are implemented and P0-1 strict TLS code path is now restored with emergency override controls; verification/sign-off remains open (see Phase 2)
-- Security P1 verification and CI/security operations tasks are still incomplete (see Phase 2)
-- Backend security test coverage has expanded (negative auth + cross-user + admin-import + validation route + HMAC/cap edge checks), but CI/runtime evidence sign-off is still open
+- Security P1 verification and CI/security operations tasks are still incomplete (see Phase 2); `VALIDATION_HMAC_SECRET` startup guard now closed
+- Backend security test coverage expanded further (startup HMAC secret + CORS regex compile checks, explicit cross-user validation denial); CI/runtime evidence sign-off still open
 - Phase 5 runtime is not complete (scheduler integration, full endpoint verification, and evidence sign-off still open)
 - Dataset enrichment not implemented (see Phase 6)
 - Scoring calibration evidence is incomplete (5-route evidence + `Other/Unknown` threshold sign-off) (see Phase 3)

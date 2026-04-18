@@ -79,6 +79,8 @@ async def request_size_and_security_headers(request: Request, call_next):
 
 @app.on_event("startup")
 async def startup():
+    import re as _re
+
     logger.info("=== Reproute API starting up ===")
     s = get_settings()
     if s.is_production() and s.poc_mode:
@@ -101,6 +103,13 @@ async def startup():
             raise RuntimeError("Invalid startup config: CLERK_JWKS_URL is required in production")
         if not s.clerk_jwt_issuer.strip():
             raise RuntimeError("Invalid startup config: CLERK_JWT_ISSUER is required in production")
+        if not s.validation_hmac_secret.strip():
+            raise RuntimeError("Invalid startup config: VALIDATION_HMAC_SECRET is required in production")
+    if cors_origin_regex:
+        try:
+            _re.compile(cors_origin_regex)
+        except _re.error as exc:
+            raise RuntimeError(f"Invalid startup config: CORS_ALLOW_ORIGIN_REGEX is not a valid regex: {exc}") from exc
     logger.info("environment=%s poc_mode=%s", s.environment, s.poc_mode)
     logger.info("database_configured=%s", bool(s.database_url))
     logger.info("redis_configured=%s", bool(s.redis_url))

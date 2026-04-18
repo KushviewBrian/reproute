@@ -278,6 +278,10 @@ def main() -> None:
         upsert_batch(engine, batch)
         upserted += len(batch)
     stale_marked = mark_stale_overture_records(engine, refresh_started_at)
+    print(
+        f"stale_record_update refresh_started_at={refresh_started_at.isoformat()} "
+        f"stale_marked={stale_marked}"
+    )
 
     def pct(value: int) -> float:
         if processed == 0:

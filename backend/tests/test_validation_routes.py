@@ -166,6 +166,38 @@ async def test_read_validation_state_success_includes_overall_label(monkeypatch)
     assert len(resp.fields) == 1
 
 
+@pytest.mark.asyncio
+async def test_trigger_validation_cross_user_business_denied(monkeypatch) -> None:
+    """User B cannot trigger validation on a business they do not own or have on a route."""
+    monkeypatch.setattr(validation_routes, "enforce_rate_limit", _noop_async)
+    # user_can_access_business returns False for this user/business combination
+    monkeypatch.setattr(validation_routes, "user_can_access_business", _false_async)
+    other_users_business_id = uuid.uuid4()
+    attacker = User(id=uuid.uuid4(), email="attacker@example.com")
+    with pytest.raises(HTTPException) as exc:
+        await validation_routes.trigger_validation(
+            business_id=other_users_business_id,
+            payload=TriggerValidationRequest(requested_checks=["website", "phone"]),
+            user=attacker,
+            db=SimpleNamespace(),
+        )
+    assert exc.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_read_validation_state_cross_user_business_denied(monkeypatch) -> None:
+    """User B cannot read validation state for a business they do not own or have on a route."""
+    monkeypatch.setattr(validation_routes, "user_can_access_business", _false_async)
+    attacker = User(id=uuid.uuid4(), email="attacker@example.com")
+    with pytest.raises(HTTPException) as exc:
+        await validation_routes.read_validation_state(
+            business_id=uuid.uuid4(),
+            user=attacker,
+            db=SimpleNamespace(),
+        )
+    assert exc.value.status_code == 404
+
+
 async def _enqueue_run_stub(_db, *, business_id, user_id, requested_checks):
     _ = user_id, requested_checks
     return SimpleNamespace(id=business_id, status="queued")

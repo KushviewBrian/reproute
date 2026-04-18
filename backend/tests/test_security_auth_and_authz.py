@@ -261,6 +261,8 @@ def _snapshot_settings(settings):
         "clerk_jwt_issuer": settings.clerk_jwt_issuer,
         "database_tls_emergency_insecure_override": settings.database_tls_emergency_insecure_override,
         "database_tls_emergency_override_sunset": settings.database_tls_emergency_override_sunset,
+        "validation_hmac_secret": settings.validation_hmac_secret,
+        "cors_allow_origin_regex": settings.cors_allow_origin_regex,
     }
 
 
@@ -271,3 +273,41 @@ def _restore_settings(settings, values):
     settings.clerk_jwt_issuer = values["clerk_jwt_issuer"]
     settings.database_tls_emergency_insecure_override = values["database_tls_emergency_insecure_override"]
     settings.database_tls_emergency_override_sunset = values["database_tls_emergency_override_sunset"]
+    settings.validation_hmac_secret = values["validation_hmac_secret"]
+    settings.cors_allow_origin_regex = values["cors_allow_origin_regex"]
+
+
+@pytest.mark.asyncio
+async def test_startup_rejects_missing_hmac_secret_in_production(monkeypatch):
+    settings = get_settings()
+    original = _snapshot_settings(settings)
+    settings.environment = "production"
+    settings.poc_mode = False
+    settings.clerk_jwks_url = "https://example.test/jwks"
+    settings.clerk_jwt_issuer = "https://issuer.test"
+    settings.validation_hmac_secret = ""
+    settings.database_tls_emergency_insecure_override = False
+    monkeypatch.setattr("app.main.is_db_tls_config_secure", lambda: True)
+    monkeypatch.setattr("app.main.cors_origin_regex", None)
+    try:
+        with pytest.raises(RuntimeError, match="VALIDATION_HMAC_SECRET"):
+            await startup()
+    finally:
+        _restore_settings(settings, original)
+
+
+@pytest.mark.asyncio
+async def test_startup_rejects_invalid_cors_regex(monkeypatch):
+    settings = get_settings()
+    original = _snapshot_settings(settings)
+    settings.environment = "development"
+    settings.poc_mode = False
+    settings.validation_hmac_secret = "secret"
+    monkeypatch.setattr("app.main.is_db_tls_config_secure", lambda: True)
+    # Inject an invalid regex via the module-level variable that startup() reads
+    monkeypatch.setattr("app.main.cors_origin_regex", "[invalid(regex")
+    try:
+        with pytest.raises(RuntimeError, match="CORS_ALLOW_ORIGIN_REGEX"):
+            await startup()
+    finally:
+        _restore_settings(settings, original)
