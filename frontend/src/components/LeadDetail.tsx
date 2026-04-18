@@ -61,7 +61,7 @@ export function savedLeadToDetail(s: SavedLead): DetailLead {
     insurance_class: null,
     address: s.address,
     phone: s.phone,
-    website: null,
+    website: s.website,
     final_score: s.final_score ?? null,
     fit_score: null,
     distance_score: null,
@@ -215,8 +215,13 @@ export function LeadDetail({ lead, routeId, token, onClose }: Props) {
     setValidationError(null);
     try {
       await triggerValidation(lead.business_id, token);
-      const data = await getValidationState(lead.business_id, token);
-      setValidation(data);
+      // Poll until run is done/failed or 10 attempts (~30s)
+      for (let i = 0; i < 10; i++) {
+        await new Promise((r) => setTimeout(r, 3000));
+        const data = await getValidationState(lead.business_id, token);
+        setValidation(data);
+        if (data.run?.status === "done" || data.run?.status === "failed" || data.run?.status === "partial") break;
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Validation failed";
       if (!msg.startsWith("404")) setValidationError(msg);
@@ -445,7 +450,7 @@ export function LeadDetail({ lead, routeId, token, onClose }: Props) {
                 disabled={validationTriggering || !lead}
                 style={{ fontSize: "0.7rem", padding: "0.2rem 0.5rem" }}
               >
-                {validationTriggering ? <span className="spinner" /> : "Validate now"}
+                {validationTriggering ? <><span className="spinner" /> Checking…</> : "Validate now"}
               </button>
             )}
           </div>

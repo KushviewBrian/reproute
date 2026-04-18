@@ -4,9 +4,11 @@ import {
   deleteSavedLead,
   downloadRouteCsv,
   downloadSavedLeadsCsv,
+  getValidationState,
   listNotes,
   listSavedLeads,
   type SavedLead,
+  type ValidationStateResponse,
   updateSavedLead,
 } from "../api/client";
 import { cacheSavedLeads, readCachedSavedLeads } from "../lib/savedLeadCache";
@@ -88,6 +90,7 @@ export function SavedLeads({ token, currentRouteId, onAddToRoute, onCountChange,
   const [exportingAll, setExportingAll] = useState(false);
   const [cacheMeta, setCacheMeta] = useState<string | null>(null);
   const [queueCount, setQueueCount] = useState(() => getQueuedCount());
+  const [validationStates, setValidationStates] = useState<Record<string, ValidationStateResponse>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -124,6 +127,20 @@ export function SavedLeads({ token, currentRouteId, onAddToRoute, onCountChange,
           setItems(sorted);
           setCacheMeta(null);
           onCountChange?.(sorted.length);
+          if (token) {
+            Promise.allSettled(
+              sorted.map((l) =>
+                getValidationState(l.business_id, token).then((vs) => ({ id: l.business_id, vs })),
+              ),
+            ).then((results) => {
+              if (cancelled) return;
+              const map: Record<string, ValidationStateResponse> = {};
+              for (const r of results) {
+                if (r.status === "fulfilled") map[r.value.id] = r.value.vs;
+              }
+              setValidationStates(map);
+            });
+          }
         }
       } catch {
         const cached = readCachedSavedLeads(status);
@@ -277,6 +294,32 @@ export function SavedLeads({ token, currentRouteId, onAddToRoute, onCountChange,
               {it.address && (
                 <p style={{ fontSize: "0.7rem", color: "var(--gray-500)", margin: "0.1rem 0 0" }}>{it.address}</p>
               )}
+              {(() => {
+                const vs = validationStates[it.business_id];
+                if (!vs) return null;
+                const websiteField = vs.fields.find((f) => f.field_name === "website");
+                const phoneField = vs.fields.find((f) => f.field_name === "phone");
+                if (!websiteField && !phoneField) return null;
+                function chipLabel(fieldName: string, state: string | null) {
+                  const icon = state === "valid" ? "OK" : state === "warning" ? "⚠" : state === "invalid" ? "✗" : "?";
+                  return `${fieldName.charAt(0).toUpperCase() + fieldName.slice(1)} ${icon}`;
+                }
+                function chipClass(state: string | null) {
+                  if (state === "valid") return "val-state-chip val-state-chip--valid";
+                  if (state === "warning") return "val-state-chip val-state-chip--warning";
+                  if (state === "invalid") return "val-state-chip val-state-chip--invalid";
+                  return "val-state-chip val-state-chip--unknown";
+                }
+                return (
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.3rem", flexWrap: "wrap", marginTop: "0.25rem" }}>
+                    {websiteField && <span className={chipClass(websiteField.state)}>{chipLabel("website", websiteField.state)}</span>}
+                    {phoneField && <span className={chipClass(phoneField.state)}>{chipLabel("phone", phoneField.state)}</span>}
+                    {vs.overall_confidence != null && (
+                      <span style={{ fontSize: "0.65rem", color: "var(--gray-400)" }}>{Math.round(vs.overall_confidence)}% confidence</span>
+                    )}
+                  </div>
+                );
+              })()}
               {it.route_label && (
                 <p style={{ fontSize: "0.68rem", color: "var(--gray-400)", margin: "0.15rem 0 0" }}>
                   Route: {it.route_label}

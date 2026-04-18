@@ -28,6 +28,7 @@ class SavedLeadItem(BaseModel):
     last_contact_attempt_at: datetime | None = None
     business_name: str | None = None
     phone: str | None = None
+    website: str | None = None
     address: str | None = None
     route_label: str | None = None
     final_score: int | None = None

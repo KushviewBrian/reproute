@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
@@ -58,7 +59,15 @@ async def trigger_validation(
         user_id=user.id,
         requested_checks=payload.requested_checks,
     )
-    run, _ = await process_run_by_id(db, run.id)
+    # Process inline but with a hard deadline so the HTTP response always returns promptly.
+    # If the deadline is exceeded the run stays queued for the cron to pick up.
+    try:
+        run, _ = await asyncio.wait_for(
+            asyncio.shield(asyncio.ensure_future(process_run_by_id(db, run.id))),
+            timeout=20.0,
+        )
+    except (asyncio.TimeoutError, Exception):
+        pass
     return TriggerValidationResponse(run_id=run.id, status=run.status)
 
 

@@ -101,6 +101,7 @@ export type SavedLead = {
   last_contact_attempt_at?: string | null;
   business_name: string | null;
   phone: string | null;
+  website: string | null;
   address: string | null;
   route_label?: string | null;
   final_score?: number | null;

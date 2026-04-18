@@ -133,9 +133,8 @@ export function App({ token }: AppProps) {
         cacheRouteLeads(id, sorted);
         setCacheMeta(null);
         if (token) {
-          const leadsWithWebsite = sorted.filter((l) => l.website);
           Promise.allSettled(
-            leadsWithWebsite.map((l) =>
+            sorted.map((l) =>
               getValidationState(l.business_id, token).then((vs) => ({ id: l.business_id, vs })),
             ),
           ).then((results) => {
