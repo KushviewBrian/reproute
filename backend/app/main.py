@@ -1,13 +1,13 @@
 import logging
+from datetime import date
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from sqlalchemy import text
 
 from app.api.router import api_router
 from app.core.config import get_settings
-from app.db.session import get_engine, is_db_tls_config_secure
+from app.db.session import is_db_tls_config_secure
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -63,7 +63,17 @@ async def startup():
         logger.critical("Refusing startup: POC_MODE must be false in production")
         raise RuntimeError("Invalid startup config: POC_MODE=true in production")
     if s.is_production() and not is_db_tls_config_secure():
-        logger.warning("Production startup using non-verified DB TLS (DATABASE_TLS_VERIFY=false)")
+        if (
+            s.database_tls_emergency_insecure_override
+            and date.today() <= s.database_tls_emergency_override_sunset
+        ):
+            logger.critical(
+                "Emergency DB TLS override active until %s; startup allowed with insecure DB TLS",
+                s.database_tls_emergency_override_sunset.isoformat(),
+            )
+        else:
+            logger.critical("Refusing startup: insecure DB TLS settings in production")
+            raise RuntimeError("Invalid startup config: insecure DB TLS settings")
     if s.is_production():
         if not s.clerk_jwks_url.strip():
             raise RuntimeError("Invalid startup config: CLERK_JWKS_URL is required in production")
@@ -76,32 +86,6 @@ async def startup():
     logger.info("cors_origins=%s", cors_origins)
     logger.info("cors_origin_regex=%s", cors_origin_regex)
     logger.info("=== startup complete ===")
-
-    # Keep startup resilient in deployed environments where alembic may lag.
-    # These fields are required by the Today/Saved views introduced in Phase 4.
-    await _ensure_saved_lead_follow_up_columns()
-
-
-async def _ensure_saved_lead_follow_up_columns() -> None:
-    try:
-        engine = get_engine()
-        async with engine.begin() as conn:
-            await conn.execute(
-                text(
-                    """
-                    ALTER TABLE saved_lead
-                    ADD COLUMN IF NOT EXISTS next_follow_up_at TIMESTAMPTZ,
-                    ADD COLUMN IF NOT EXISTS last_contact_attempt_at TIMESTAMPTZ
-                    """
-                )
-            )
-            await conn.execute(
-                text(
-                    "CREATE INDEX IF NOT EXISTS idx_saved_lead_next_follow_up_at ON saved_lead (next_follow_up_at)"
-                )
-            )
-    except Exception as exc:
-        logger.warning("Saved lead follow-up compatibility patch skipped: %s", exc)
 
 
 @app.get("/")

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import math
+import re
+from difflib import SequenceMatcher
 from uuid import UUID
 
 from sqlalchemy import delete, func, insert, literal_column, select
@@ -9,6 +12,56 @@ from app.models.lead_score import LeadScore
 from app.models.route_candidate import RouteCandidate
 from app.services.business_search_service import find_candidates
 from app.services.scoring_service import score_candidate
+
+
+def _normalize_name(name: str | None) -> str:
+    if not name:
+        return ""
+    return re.sub(r"[^a-z0-9]+", " ", name.lower()).strip()
+
+
+def _haversine_m(lat1: float | None, lng1: float | None, lat2: float | None, lng2: float | None) -> float:
+    if None in (lat1, lng1, lat2, lng2):
+        return float("inf")
+    r = 6_371_000.0
+    phi1 = math.radians(float(lat1))
+    phi2 = math.radians(float(lat2))
+    d_phi = math.radians(float(lat2) - float(lat1))
+    d_lambda = math.radians(float(lng2) - float(lng1))
+    a = (
+        math.sin(d_phi / 2) ** 2
+        + math.cos(phi1) * math.cos(phi2) * (math.sin(d_lambda / 2) ** 2)
+    )
+    return 2 * r * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
+def _is_duplicate(candidate: dict, kept: dict) -> bool:
+    name_a = _normalize_name(candidate.get("name"))
+    name_b = _normalize_name(kept.get("name"))
+    if not name_a or not name_b:
+        return False
+    similarity = SequenceMatcher(a=name_a, b=name_b).ratio()
+    if similarity < 0.85:
+        return False
+    distance_m = _haversine_m(candidate.get("lat"), candidate.get("lng"), kept.get("lat"), kept.get("lng"))
+    if distance_m > 100:
+        return False
+    phone_a = (candidate.get("phone") or "").strip()
+    phone_b = (kept.get("phone") or "").strip()
+    site_a = (candidate.get("website") or "").strip().lower().rstrip("/")
+    site_b = (kept.get("website") or "").strip().lower().rstrip("/")
+    phone_match = bool(phone_a and phone_b and phone_a == phone_b)
+    website_match = bool(site_a and site_b and site_a == site_b)
+    return phone_match or website_match
+
+
+def _dedupe_leads(rows: list[dict]) -> list[dict]:
+    deduped: list[dict] = []
+    for row in rows:
+        if any(_is_duplicate(row, existing) for existing in deduped):
+            continue
+        deduped.append(row)
+    return deduped
 
 
 async def refresh_route_candidates_and_scores(db: AsyncSession, route_id: UUID, corridor_width_meters: int) -> int:
@@ -130,7 +183,7 @@ async def fetch_leads(
     filtered = await db.scalar(count_filtered_q)
     rows = (await db.execute(filtered_q)).mappings().all()
 
-    lead_rows = []
+    lead_rows: list[dict] = []
     for row in rows:
         lead_rows.append(
             {
@@ -151,4 +204,5 @@ async def fetch_leads(
             }
         )
 
+    lead_rows = _dedupe_leads(lead_rows)
     return lead_rows, int(total or 0), int(filtered or 0)

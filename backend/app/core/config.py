@@ -1,4 +1,5 @@
 from functools import lru_cache
+from datetime import date
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -14,6 +15,8 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/reproute"
     database_ssl_ca_pem: str = ""
     database_tls_verify: bool = False
+    database_tls_emergency_insecure_override: bool = False
+    database_tls_emergency_override_sunset: date = date(2026, 6, 30)
     redis_url: str = "redis://localhost:6379/0"
 
     secret_key: str = "dev-secret"
@@ -34,6 +37,12 @@ class Settings(BaseSettings):
     admin_allowed_emails: str = ""
     admin_import_allowed_roots: str = ""
     validation_hmac_secret: str = ""
+    validation_daily_cap: int = 50
+    validation_monthly_cap: int = 2000
+    validation_per_user_daily_cap: int = 15
+    validation_http_timeout_seconds: int = 5
+    validation_retry_delay_seconds: int = 3
+    validation_admin_token_ttl_seconds: int = 60
 
     cors_allow_origins: str = "http://localhost:5173"
     cors_allow_origin_regex: str = ""

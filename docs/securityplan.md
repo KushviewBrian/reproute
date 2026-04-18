@@ -23,7 +23,7 @@ No plan is literally bulletproof. The objective is defense-in-depth with verifie
 These are confirmed open issues in the current codebase. Each must be closed before pilot.
 
 ### P0-1: Database TLS certificate verification disabled
-**Status: PARTIALLY IMPLEMENTED; TEMPORARILY RELAXED IN PRODUCTION HOTFIX; NOT CLOSED**
+**Status: CODE IMPLEMENTED WITH EMERGENCY OVERRIDE; VERIFICATION PENDING**
 
 `backend/app/db/session.py` now supports strict verification, but it is controlled by `DATABASE_TLS_VERIFY` and can run with `CERT_NONE`:
 ```python
@@ -34,13 +34,14 @@ else:
     ssl_ctx.check_hostname = False
     ssl_ctx.verify_mode = ssl.CERT_NONE
 ```
-`backend/app/main.py` currently logs a warning in production when TLS is insecure instead of failing startup. This is a temporary deploy-stability tradeoff and must be reversed before pilot.
+`backend/app/main.py` now fails startup in production when TLS is insecure unless emergency override is explicitly enabled and not past sunset.
 
 **Required fix:**
 - In production, use `ssl.CERT_REQUIRED` with `check_hostname=True`.
 - Load the appropriate CA bundle (`ssl.create_default_context()` with no overrides does this correctly).
-- The pgbouncer pooler URL must be reachable with a valid cert — verify this, set `DATABASE_TLS_VERIFY=true`, and remove insecure fallback from production configuration.
-- Add a startup check: if `environment == "production"` and `ssl.CERT_NONE` is active, log a critical error and refuse to start.
+- The pgbouncer pooler URL must be reachable with a valid cert and `DATABASE_TLS_VERIFY=true` in production.
+- Emergency override control must remain disabled by default: `DATABASE_TLS_EMERGENCY_INSECURE_OVERRIDE=false`.
+- Override sunset must be enforced and documented: `DATABASE_TLS_EMERGENCY_OVERRIDE_SUNSET` (date).
 
 ### P0-2: JWT signature verification is optional, not enforced
 **Status: CODE IMPLEMENTED; VERIFICATION PENDING**
@@ -157,7 +158,7 @@ JWKS now uses a 1-hour TTL cache. Remaining work is integration validation durin
 - RLS is not relied upon for security (app enforces ownership in Python) — this is intentional and acceptable; do not add RLS as a false safety net without testing it end-to-end
 
 **Implementation checklist:**
-- [ ] Re-close P0-1: enforce strict TLS in production (`DATABASE_TLS_VERIFY=true`) and fail startup on insecure DB TLS config
+- [ ] Verify P0-1 in production/staging with live pooler cert chain; confirm emergency override stays disabled
 - [ ] Create least-privileged DB app role; app connection string uses app role, not superuser
 - [ ] Verify Supabase Data API is restricted or disabled for app tables
 - [ ] Confirm `service_role` key is not in any env file committed to repo or in Render env vars accessible to the frontend
@@ -437,7 +438,7 @@ For the frontend (Cloudflare Pages `_headers` file in `frontend/public/`):
 ### Phase A (0–7 days) — Critical Lockdown
 Close all P0 items.
 
-- [ ] Re-close DB TLS verification in production (P0-1): strict verify enforced + production startup hard-fail on insecure config
+- [x] Implement strict DB TLS startup guard in production with emergency override + sunset control (P0-1)
 - [x] Make JWT signature verification unconditional in production (P0-2)
 - [x] Add startup validator: fail if required auth env vars are missing in production
 - [x] Add `poc_mode` production guard to startup (P0-4)
@@ -477,7 +478,7 @@ Close all P0 items.
 ## 8) Security Checklist (Definition of Done Before Pilot)
 
 ### P0 Items
-- [ ] Production DB uses verified TLS (no `CERT_NONE`, no `check_hostname=False`)
+- [ ] Production DB verified at runtime with `DATABASE_TLS_VERIFY=true` and emergency override disabled
 - [x] JWT signature verification is unconditional in production (not gated on env var presence)
 - [x] Startup fails in production if `CLERK_JWKS_URL` or `CLERK_JWT_ISSUER` are empty
 - [x] Startup fails in production if `poc_mode=True`

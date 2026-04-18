@@ -50,6 +50,7 @@ async def get_notes(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> list[NoteItem]:
+    await enforce_rate_limit(f"rl:notes_read:{user.id}", limit=240, window_seconds=3600)
     rows = (
         await db.execute(
             select(Note)

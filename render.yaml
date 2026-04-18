@@ -25,7 +25,11 @@ services:
       - key: CORS_ALLOW_ORIGIN_REGEX
         value: https://.*\\.pages\\.dev
       - key: DATABASE_TLS_VERIFY
+        value: "true"
+      - key: DATABASE_TLS_EMERGENCY_INSECURE_OVERRIDE
         value: "false"
+      - key: DATABASE_TLS_EMERGENCY_OVERRIDE_SUNSET
+        value: "2026-06-30"
       - key: GEOCODE_WORKER_URL
         value: https://photon.komoot.io/api/
       - key: ORS_BASE_URL

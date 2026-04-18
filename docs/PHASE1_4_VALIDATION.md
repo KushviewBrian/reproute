@@ -5,8 +5,18 @@ This runbook captures repeatable checks for the remaining evidence-heavy items i
 ## Latest Evidence Snapshot (2026-04-17)
 
 - Ingestion QA artifact: `docs/evidence/phase1_ingest_qa_2026-04-17.md`
-- EXPLAIN ANALYZE artifact placeholder: `docs/evidence/phase1_explain_route_pending_2026-04-17.txt`
-- Route IDs and p95 timing: pending capture when connected to seeded Postgres and live API runtime.
+- EXPLAIN ANALYZE artifact: `docs/evidence/phase1_explain_route_pending_2026-04-17.txt` (to be replaced with route-specific trace file before phase close)
+- Route IDs and p95 timing:
+  - Route IDs: pending production capture (`validate_scoring.py` now supports output artifact with per-route metrics and `other_unknown_rate`)
+  - p95 capture: pending production capture
+
+## Gate 1 Security Verification Checklist (2026-04-17)
+
+- [ ] Production startup fails when DB TLS is insecure and emergency override is disabled.
+- [ ] Emergency override path verified with sunset guard.
+- [ ] Invalid signature / wrong issuer / expired token tests green.
+- [ ] Cross-user access denial tests green for routes, saved leads, notes, export.
+- [ ] CI security scanners green (gitleaks + pip-audit + npm audit).
 
 ## 1) Spatial index evidence (`EXPLAIN ANALYZE`)
 
@@ -65,12 +75,14 @@ python scripts/validate_scoring.py \
   --route-id "<route_2>" \
   --route-id "<route_3>" \
   --route-id "<route_4>" \
-  --route-id "<route_5>"
+  --route-id "<route_5>" \
+  --output docs/evidence/phase3_scoring_validation_<date>.txt
 ```
 
 Expected:
 
 - Each route prints `latency_ms`, `avg_score`, and `excluded_in_top`.
+- Summary prints `other_unknown_rate` for phase threshold tracking.
 - Use these outputs as the baseline before pilot hardening.
 
 ## 4) Manual UI checks (Phase 3-4)

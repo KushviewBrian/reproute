@@ -1,4 +1,5 @@
 import type { Lead } from "../api/client";
+import type React from "react";
 import { useState } from "react";
 
 type Props = {
@@ -41,6 +42,7 @@ function IconNavigation() {
 
 export function LeadList({ leads, selectedLead, onSave, onSaveWithNote, onSelect, onAddStop, corridorMiles }: Props) {
   const [draftNotes, setDraftNotes] = useState<Record<string, string>>({});
+  const [tooltipLeadId, setTooltipLeadId] = useState<string | null>(null);
 
   function setDraft(businessId: string, value: string) {
     setDraftNotes((prev) => ({ ...prev, [businessId]: value }));
@@ -51,6 +53,18 @@ export function LeadList({ leads, selectedLead, onSave, onSaveWithNote, onSelect
     if (!noteText) return;
     onSaveWithNote(lead, noteText);
     setDraft(lead.business_id, "");
+  }
+
+  function handleScoreBadgeClick(lead: Lead, event: React.MouseEvent<HTMLSpanElement>) {
+    event.stopPropagation();
+    onSelect(lead);
+    if (typeof window === "undefined") return;
+    const key = "reproute_score_tooltip_seen_v1";
+    const seen = window.localStorage.getItem(key);
+    if (!seen) {
+      setTooltipLeadId(lead.business_id);
+      window.localStorage.setItem(key, "1");
+    }
   }
 
   if (leads.length === 0) {
@@ -80,8 +94,39 @@ export function LeadList({ leads, selectedLead, onSave, onSaveWithNote, onSelect
           >
             <div className="lead-card-top">
               <span className="lead-name">{lead.name}</span>
-              <span className={scoreBadgeClass(lead.final_score)}>{lead.final_score}</span>
+              <span
+                className={scoreBadgeClass(lead.final_score)}
+                onClick={(e) => handleScoreBadgeClick(lead, e)}
+                title="Tap for score explanation"
+              >
+                {lead.final_score}
+              </span>
             </div>
+            {tooltipLeadId === lead.business_id && (
+              <div
+                style={{
+                  marginTop: "0.3rem",
+                  background: "var(--gray-50)",
+                  border: "1px solid var(--gray-200)",
+                  borderRadius: "8px",
+                  padding: "0.4rem 0.5rem",
+                  fontSize: "0.68rem",
+                  color: "var(--gray-700)",
+                }}
+              >
+                Score combines fit, distance, and actionability. Higher means better route priority.
+                <button
+                  className="btn btn-ghost btn-sm"
+                  style={{ marginLeft: "0.4rem", padding: "0.1rem 0.35rem" }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setTooltipLeadId(null);
+                  }}
+                >
+                  Dismiss
+                </button>
+              </div>
+            )}
 
             <div className="lead-meta-row">
               <span className="ins-class-tag">{lead.insurance_class ?? "Unknown"}</span>

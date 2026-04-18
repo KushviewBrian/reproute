@@ -85,12 +85,21 @@ export function App({ token }: AppProps) {
   const [cacheMeta, setCacheMeta] = useState<string | null>(null);
   const [savedCount, setSavedCount] = useState(0);
   const [showInstallHint, setShowInstallHint] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     const dismissed = window.localStorage.getItem("reproute_install_hint_dismissed");
     if (!dismissed) {
       setShowInstallHint(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onboardingSeen = window.localStorage.getItem("reproute_onboarding_seen_v1");
+    if (!onboardingSeen) {
+      setShowOnboarding(true);
     }
   }, []);
 
@@ -463,6 +472,61 @@ export function App({ token }: AppProps) {
         </div>
       </SignedOut>
       <SignedIn>{appContent}</SignedIn>
+      {showOnboarding && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(15, 23, 42, 0.55)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 80,
+            padding: "1rem",
+          }}
+        >
+          <div
+            style={{
+              width: "min(560px, 100%)",
+              background: "white",
+              borderRadius: "14px",
+              padding: "1rem 1rem 0.9rem",
+              border: "1px solid var(--gray-200)",
+            }}
+          >
+            <h3 style={{ margin: 0, fontSize: "1rem", color: "var(--gray-900)" }}>Welcome to RepRoute</h3>
+            <p style={{ margin: "0.4rem 0 0.65rem", fontSize: "0.8rem", color: "var(--gray-600)" }}>
+              Three-step flow: Plan route, review ranked leads, save and track follow-ups.
+            </p>
+            <ol style={{ margin: 0, paddingLeft: "1.1rem", color: "var(--gray-700)", fontSize: "0.78rem", lineHeight: 1.5 }}>
+              <li><strong>Plan</strong>: create a route in the Route tab.</li>
+              <li><strong>Review</strong>: check score explanation and contact availability.</li>
+              <li><strong>Track</strong>: save leads, add notes, schedule follow-up dates in Saved/Today.</li>
+            </ol>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.45rem", marginTop: "0.8rem" }}>
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => {
+                  window.localStorage.setItem("reproute_onboarding_seen_v1", "1");
+                  setShowOnboarding(false);
+                }}
+              >
+                Dismiss
+              </button>
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={() => {
+                  window.localStorage.setItem("reproute_onboarding_seen_v1", "1");
+                  setShowOnboarding(false);
+                  setTab("route");
+                }}
+              >
+                Start Planning
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
