@@ -5,9 +5,10 @@ import { getSavedLeadsToday, type SavedLead, type SavedLeadsTodayResponse } from
 type Props = {
   token?: string;
   onGoToRoute: () => void;
+  onSelectLead?: (lead: SavedLead) => void;
 };
 
-function Section({ title, items }: { title: string; items: SavedLead[] }) {
+function Section({ title, items, onSelectLead }: { title: string; items: SavedLead[]; onSelectLead?: (lead: SavedLead) => void }) {
   return (
     <div className="saved-header" style={{ marginBottom: "0.6rem" }}>
       <h2>{title}</h2>
@@ -18,7 +19,13 @@ function Section({ title, items }: { title: string; items: SavedLead[] }) {
           {items.map((item) => (
             <li key={item.id} className="saved-card" style={{ marginBottom: "0.45rem" }}>
               <div className="saved-card-top">
-                <span className="saved-business-name">{item.business_name ?? "Unnamed business"}</span>
+                <button
+                  className="saved-business-name"
+                  style={{ background: "none", border: "none", padding: 0, cursor: "pointer", textAlign: "left" }}
+                  onClick={() => onSelectLead?.(item)}
+                >
+                  {item.business_name ?? "Unnamed business"}
+                </button>
                 <span className={`status-pill status-${item.status}`}>{item.status}</span>
               </div>
               {item.next_follow_up_at && (
@@ -39,7 +46,7 @@ function Section({ title, items }: { title: string; items: SavedLead[] }) {
   );
 }
 
-export function TodayDashboard({ token, onGoToRoute }: Props) {
+export function TodayDashboard({ token, onGoToRoute, onSelectLead }: Props) {
   const [data, setData] = useState<SavedLeadsTodayResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -96,9 +103,9 @@ export function TodayDashboard({ token, onGoToRoute }: Props) {
 
   return (
     <>
-      <Section title="Overdue follow-ups" items={data.overdue} />
-      <Section title="Due today" items={data.due_today} />
-      <Section title="High-priority untouched" items={data.high_priority_untouched} />
+      <Section title="Overdue follow-ups" items={data.overdue} onSelectLead={onSelectLead} />
+      <Section title="Due today" items={data.due_today} onSelectLead={onSelectLead} />
+      <Section title="High-priority untouched" items={data.high_priority_untouched} onSelectLead={onSelectLead} />
       <div className="saved-header">
         <h2>Recent route</h2>
         {data.recent_route ? (

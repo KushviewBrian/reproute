@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { createNote, listNotes, saveLead, type Lead, updateSavedLead } from "../api/client";
+import { createNote, listNotes, saveLead, type Lead, type SavedLead, updateSavedLead } from "../api/client";
 import {
   enqueueNote,
   enqueueStatusChange,
@@ -9,8 +9,58 @@ import {
   getQueuedCount,
 } from "../lib/offlineQueue";
 
+export type DetailLead = {
+  business_id: string;
+  name: string;
+  insurance_class: string | null;
+  address: string | null;
+  phone: string | null;
+  website: string | null;
+  final_score: number | null;
+  fit_score: number | null;
+  distance_score: number | null;
+  actionability_score: number | null;
+  explanation: { fit: string; distance: string; actionability: string } | null;
+  lat?: number | null;
+  lng?: number | null;
+};
+
+export function leadToDetail(l: Lead): DetailLead {
+  return {
+    business_id: l.business_id,
+    name: l.name,
+    insurance_class: l.insurance_class,
+    address: l.address,
+    phone: l.phone,
+    website: l.website,
+    final_score: l.final_score,
+    fit_score: l.fit_score,
+    distance_score: l.distance_score,
+    actionability_score: l.actionability_score,
+    explanation: l.explanation,
+    lat: l.lat,
+    lng: l.lng,
+  };
+}
+
+export function savedLeadToDetail(s: SavedLead): DetailLead {
+  return {
+    business_id: s.business_id,
+    name: s.business_name ?? s.business_id.slice(0, 8) + "…",
+    insurance_class: null,
+    address: s.address,
+    phone: s.phone,
+    website: null,
+    final_score: s.final_score ?? null,
+    fit_score: null,
+    distance_score: null,
+    actionability_score: null,
+    explanation: null,
+  };
+}
+
 type Props = {
-  lead: Lead | null;
+  lead: DetailLead | null;
   routeId: string | null;
   token?: string;
   onClose: () => void;
@@ -264,23 +314,33 @@ export function LeadDetail({ lead, routeId, token, onClose }: Props) {
           <p style={{ fontSize: "0.72rem", color: "var(--gray-500)", marginBottom: "0.25rem" }}>
             Confidence status: Unchecked
           </p>
-          <div className="score-breakdown">
-            <div className="score-mini">
-              <div className="score-mini-label">Fit</div>
-              <div className="score-mini-value">{lead.fit_score}</div>
-            </div>
-            <div className="score-mini">
-              <div className="score-mini-label">Distance</div>
-              <div className="score-mini-value">{lead.distance_score}</div>
-            </div>
-            <div className="score-mini">
-              <div className="score-mini-label">Action</div>
-              <div className="score-mini-value">{lead.actionability_score}</div>
-            </div>
-          </div>
-          <p style={{ fontSize: "0.7rem", color: "var(--gray-500)", lineHeight: 1.5, marginTop: "0.25rem" }}>
-            Why it ranked: {lead.explanation.fit} · {lead.explanation.distance} · {lead.explanation.actionability}
-          </p>
+          {lead.fit_score != null && lead.distance_score != null && lead.actionability_score != null ? (
+            <>
+              <div className="score-breakdown">
+                <div className="score-mini">
+                  <div className="score-mini-label">Fit</div>
+                  <div className="score-mini-value">{lead.fit_score}</div>
+                </div>
+                <div className="score-mini">
+                  <div className="score-mini-label">Distance</div>
+                  <div className="score-mini-value">{lead.distance_score}</div>
+                </div>
+                <div className="score-mini">
+                  <div className="score-mini-label">Action</div>
+                  <div className="score-mini-value">{lead.actionability_score}</div>
+                </div>
+              </div>
+              {lead.explanation && (
+                <p style={{ fontSize: "0.7rem", color: "var(--gray-500)", lineHeight: 1.5, marginTop: "0.25rem" }}>
+                  Why it ranked: {lead.explanation.fit} · {lead.explanation.distance} · {lead.explanation.actionability}
+                </p>
+              )}
+            </>
+          ) : (
+            <p style={{ fontSize: "0.72rem", color: "var(--gray-400)" }}>
+              {lead.final_score != null ? `Overall score: ${lead.final_score}` : "Score not available for this context"}
+            </p>
+          )}
         </div>
 
         {/* Save with status */}

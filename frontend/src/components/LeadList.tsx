@@ -4,7 +4,7 @@ import { useState } from "react";
 
 type Props = {
   leads: Lead[];
-  selectedLead: Lead | null;
+  selectedLead: { business_id: string } | null;
   onSave: (lead: Lead) => void;
   onSaveWithNote: (lead: Lead, noteText: string) => void;
   onSelect: (lead: Lead) => void;

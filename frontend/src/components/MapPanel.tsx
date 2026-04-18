@@ -8,7 +8,7 @@ import type { Lead } from "../api/client";
 type Props = {
   routeGeoJson: GeoJSON.LineString | null;
   leads: Lead[];
-  selectedLead: Lead | null;
+  selectedLead: { business_id: string; lat?: number | null; lng?: number | null } | null;
   onSelectLead: (lead: Lead) => void;
 };
 

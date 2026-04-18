@@ -2,7 +2,7 @@ import { SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/clerk-reac
 import { useCallback, useEffect, useState } from "react";
 
 import { createNote, fetchLeads, patchRoute, saveLead, type Lead } from "../api/client";
-import { LeadDetail } from "../components/LeadDetail";
+import { LeadDetail, leadToDetail, savedLeadToDetail, type DetailLead } from "../components/LeadDetail";
 import { LeadList } from "../components/LeadList";
 import { MapPanel } from "../components/MapPanel";
 import { RouteForm } from "../components/RouteForm";
@@ -79,7 +79,7 @@ export function App({ token }: AppProps) {
   const [insuranceClass, setInsuranceClass] = useState<string>("");
   const [sortBy, setSortBy] = useState<"score" | "business_type">("score");
   const [corridor, setCorridor] = useState(1609);
-  const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
+  const [selectedLead, setSelectedLead] = useState<DetailLead | null>(null);
   const [waypoints, setWaypoints] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [cacheMeta, setCacheMeta] = useState<string | null>(null);
@@ -275,7 +275,11 @@ export function App({ token }: AppProps) {
           )}
 
           {tab === "today" && (
-            <TodayDashboard token={token} onGoToRoute={() => setTab("route")} />
+            <TodayDashboard
+              token={token}
+              onGoToRoute={() => setTab("route")}
+              onSelectLead={(sl) => setSelectedLead(savedLeadToDetail(sl))}
+            />
           )}
 
           {tab === "route" && (
@@ -393,7 +397,7 @@ export function App({ token }: AppProps) {
                 selectedLead={selectedLead}
                 onSave={onSaveLead}
                 onSaveWithNote={onSaveLeadWithNote}
-                onSelect={setSelectedLead}
+                onSelect={(l) => setSelectedLead(leadToDetail(l))}
                 onAddStop={onAddStop}
                 corridorMiles={corridorMiles}
               />
@@ -405,6 +409,7 @@ export function App({ token }: AppProps) {
               token={token}
               currentRouteId={routeId}
               onCountChange={setSavedCount}
+              onSelectLead={(sl) => setSelectedLead(savedLeadToDetail(sl))}
               onAddToRoute={(lead) => {
                 if (!lead.business_name) return;
                 const label = lead.address

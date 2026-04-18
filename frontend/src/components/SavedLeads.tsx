@@ -17,6 +17,7 @@ type Props = {
   currentRouteId: string | null;
   onAddToRoute?: (lead: SavedLead) => void;
   onCountChange?: (count: number) => void;
+  onSelectLead?: (lead: SavedLead) => void;
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -80,7 +81,7 @@ function sortSavedLeads(items: SavedLead[]): SavedLead[] {
   });
 }
 
-export function SavedLeads({ token, currentRouteId, onAddToRoute, onCountChange }: Props) {
+export function SavedLeads({ token, currentRouteId, onAddToRoute, onCountChange, onSelectLead }: Props) {
   const [items, setItems] = useState<SavedLead[]>([]);
   const [status, setStatus] = useState<string>("");
   const [exporting, setExporting] = useState(false);
@@ -262,7 +263,13 @@ export function SavedLeads({ token, currentRouteId, onAddToRoute, onCountChange 
           {items.map((it) => (
             <li key={it.id} className="saved-card">
               <div className="saved-card-top">
-                <span className="saved-business-name">{it.business_name ?? it.business_id.slice(0, 8) + "…"}</span>
+                <button
+                  className="saved-business-name"
+                  style={{ background: "none", border: "none", padding: 0, cursor: "pointer", textAlign: "left" }}
+                  onClick={() => onSelectLead?.(it)}
+                >
+                  {it.business_name ?? it.business_id.slice(0, 8) + "…"}
+                </button>
                 <span className={`status-pill status-${it.status}`}>
                   {STATUS_LABELS[it.status] ?? it.status}
                 </span>
