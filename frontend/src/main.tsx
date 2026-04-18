@@ -27,16 +27,22 @@ function ClerkApp() {
     }
 
     refresh();
-    const interval = setInterval(refresh, 4 * 60 * 1000);
+    const interval = setInterval(refresh, 55 * 1000);
     return () => {
       cancelled = true;
       clearInterval(interval);
     };
   }, [getToken, isLoaded, isSignedIn]);
 
+  const refreshToken = React.useCallback(async () => {
+    const t = await getToken({ template: "reproute" });
+    if (t) setToken(t);
+    return t ?? undefined;
+  }, [getToken]);
+
   return (
     <BrowserRouter>
-      <App token={token} />
+      <App token={token} refreshToken={refreshToken} />
     </BrowserRouter>
   );
 }

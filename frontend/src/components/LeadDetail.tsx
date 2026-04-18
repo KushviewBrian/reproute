@@ -74,6 +74,7 @@ type Props = {
   lead: DetailLead | null;
   routeId: string | null;
   token?: string;
+  refreshToken?: () => Promise<string | undefined>;
   onClose: () => void;
 };
 
@@ -141,7 +142,7 @@ function IconBookmark() {
   );
 }
 
-export function LeadDetail({ lead, routeId, token, onClose }: Props) {
+export function LeadDetail({ lead, routeId, token, refreshToken, onClose }: Props) {
   const [notes, setNotes] = useState<
     { id: string; note_text: string; created_at: string; outcome_status?: string | null; next_action?: string | null }[]
   >([]);
@@ -210,15 +211,17 @@ export function LeadDetail({ lead, routeId, token, onClose }: Props) {
   if (!lead) return null;
 
   async function handleValidate() {
-    if (!lead || !token) return;
+    if (!lead) return;
     setValidationTriggering(true);
     setValidationError(null);
     try {
-      await triggerValidation(lead.business_id, token);
+      const freshToken = (refreshToken ? await refreshToken() : token) ?? token;
+      if (!freshToken) return;
+      await triggerValidation(lead.business_id, freshToken);
       // Poll until run is done/failed or 10 attempts (~30s)
       for (let i = 0; i < 10; i++) {
         await new Promise((r) => setTimeout(r, 3000));
-        const data = await getValidationState(lead.business_id, token);
+        const data = await getValidationState(lead.business_id, freshToken);
         setValidation(data);
         if (data.run?.status === "done" || data.run?.status === "failed" || data.run?.status === "partial") break;
       }

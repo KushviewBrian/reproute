@@ -14,6 +14,7 @@ type Tab = "today" | "route" | "saved";
 
 type AppProps = {
   token?: string;
+  refreshToken?: () => Promise<string | undefined>;
 };
 
 function IconRoute() {
@@ -68,7 +69,7 @@ function IconDatabase() {
   );
 }
 
-export function App({ token }: AppProps) {
+export function App({ token, refreshToken }: AppProps) {
   const [tab, setTab] = useState<Tab>("today");
   const [routeId, setRouteId] = useState<string | null>(null);
   const [routeGeoJson, setRouteGeoJson] = useState<GeoJSON.LineString | null>(null);
@@ -452,6 +453,7 @@ export function App({ token }: AppProps) {
           lead={selectedLead}
           routeId={routeId}
           token={token}
+          refreshToken={refreshToken}
           onClose={() => setSelectedLead(null)}
         />
       )}
