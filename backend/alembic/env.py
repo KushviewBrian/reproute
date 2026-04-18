@@ -4,7 +4,7 @@ from logging.config import fileConfig
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool
-from sqlalchemy.engine.url import make_url
+
 
 from app.core.config import get_settings
 from app.db.base import Base
@@ -23,11 +23,14 @@ def _migration_url() -> str:
     if url.startswith("postgresql+asyncpg://"):
         url = url.replace("postgresql+asyncpg://", "postgresql+psycopg://", 1)
 
-    # Strip asyncpg-only URL options that psycopg rejects during Alembic runs.
-    parsed = make_url(url)
+    # Strip asyncpg-only query params that psycopg rejects, using string manipulation
+    # to avoid make_url re-encoding the username (which can mangle project-ref dots).
     bad_keys = {"prepared_statement_cache_size", "statement_cache_size", "command_timeout", "timeout"}
-    filtered_query = {k: v for k, v in parsed.query.items() if k not in bad_keys}
-    return str(parsed.set(query=filtered_query))
+    if "?" in url:
+        base, qs = url.split("?", 1)
+        kept = "&".join(p for p in qs.split("&") if p.split("=")[0] not in bad_keys)
+        url = f"{base}?{kept}" if kept else base
+    return url
 
 
 def run_migrations_offline() -> None:
