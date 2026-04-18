@@ -5,7 +5,7 @@ from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
-from fastapi import HTTPException
+from fastapi import BackgroundTasks, HTTPException
 
 from app.api.routes import export as export_routes
 from app.api.routes import leads as leads_routes
@@ -60,7 +60,7 @@ async def test_cross_user_route_access_denied(monkeypatch):
     db = _FakeDb(route=route)
 
     with pytest.raises(HTTPException) as exc:
-        await leads_routes.get_route_leads(route.id, user=user, db=db)
+        await leads_routes.get_route_leads(route.id, BackgroundTasks(), user=user, db=db)
     assert exc.value.status_code == 404
 
 

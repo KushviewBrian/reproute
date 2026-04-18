@@ -44,3 +44,7 @@ class Business(Base):
     updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     last_seen_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True))
     last_validated_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True))
+    osm_enriched_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True))
+    osm_phone: Mapped[str | None] = mapped_column(String)
+    osm_website: Mapped[str | None] = mapped_column(String)
+    city_license_verified_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True))

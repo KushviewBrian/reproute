@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy import and_, exists, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,6 +22,7 @@ from app.schemas.saved_lead import (
     TodayRecentRoute,
     UpdateSavedLeadRequest,
 )
+from app.services.enrichment_service import enrich_saved_lead
 from app.utils.rate_limit import enforce_rate_limit
 
 router = APIRouter()
@@ -104,6 +105,7 @@ def _saved_leads_base_query(user_id: UUID):
 @router.post("", response_model=SavedLeadItem)
 async def create_saved_lead(
     payload: CreateSavedLeadRequest,
+    background_tasks: BackgroundTasks,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> SavedLeadItem:
@@ -145,6 +147,8 @@ async def create_saved_lead(
         if not existing:
             raise
         item = existing
+
+    background_tasks.add_task(enrich_saved_lead, item.business_id, user.id)
 
     return SavedLeadItem(
         id=item.id,

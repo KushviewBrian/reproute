@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user
@@ -8,6 +8,7 @@ from app.db.session import get_db
 from app.models.route import Route
 from app.models.user import User
 from app.schemas.lead import LeadItem, LeadsResponse
+from app.services.enrichment_service import enrich_route_top_leads
 from app.services.lead_service import fetch_leads
 from app.utils.rate_limit import enforce_rate_limit
 
@@ -17,6 +18,7 @@ router = APIRouter()
 @router.get("/{route_id}/leads", response_model=LeadsResponse)
 async def get_route_leads(
     route_id: UUID,
+    background_tasks: BackgroundTasks,
     min_score: int = Query(default=40, ge=0, le=100),
     has_phone: bool | None = None,
     has_website: bool | None = None,
@@ -41,4 +43,9 @@ async def get_route_leads(
         limit=limit,
         offset=offset,
     )
+
+    # Enrich top leads missing contact info — non-blocking, errors are swallowed inside
+    if offset == 0:
+        background_tasks.add_task(enrich_route_top_leads, route_id)
+
     return LeadsResponse(route_id=route_id, leads=[LeadItem(**row) for row in leads], total=total, filtered=filtered)

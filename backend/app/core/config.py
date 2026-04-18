@@ -44,6 +44,14 @@ class Settings(BaseSettings):
     validation_retry_delay_seconds: int = 3
     validation_admin_token_ttl_seconds: int = 60
 
+    enrichment_daily_cap: int = 100
+    enrichment_monthly_cap: int = 2000
+    enrichment_per_user_daily_cap: int = 15
+    enrichment_freshness_days: int = 30
+    overpass_endpoint: str = "https://overpass-api.de/api/interpreter"
+    overpass_timeout_seconds: int = 5
+    overpass_radius_meters: int = 50
+
     cors_allow_origins: str = "http://localhost:5173"
     cors_allow_origin_regex: str = ""
     request_body_limit_bytes: int = 1_048_576
