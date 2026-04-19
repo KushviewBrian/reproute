@@ -12,6 +12,8 @@ type QueuedNote = {
 const KEY = "reproute_offline_note_queue_v1";
 const STATUS_KEY = "reproute_offline_status_queue_v1";
 export const QUEUE_UPDATED_EVENT = "reproute:queue-updated";
+let notesFlushInFlight: Promise<Note[]> | null = null;
+let statusFlushInFlight: Promise<SavedLead[]> | null = null;
 
 type QueuedStatusChange = {
   business_id: string;
@@ -35,7 +37,9 @@ function readQueue(): QueuedNote[] {
 
 function writeQueue(queue: QueuedNote[]): void {
   localStorage.setItem(KEY, JSON.stringify(queue));
-  window.dispatchEvent(new Event(QUEUE_UPDATED_EVENT));
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(QUEUE_UPDATED_EVENT));
+  }
 }
 
 function readStatusQueue(): QueuedStatusChange[] {
@@ -51,7 +55,9 @@ function readStatusQueue(): QueuedStatusChange[] {
 
 function writeStatusQueue(queue: QueuedStatusChange[]): void {
   localStorage.setItem(STATUS_KEY, JSON.stringify(queue));
-  window.dispatchEvent(new Event(QUEUE_UPDATED_EVENT));
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(QUEUE_UPDATED_EVENT));
+  }
 }
 
 export function enqueueNote(item: Omit<QueuedNote, "queued_at">): void {
@@ -65,32 +71,41 @@ export function getQueuedCount(): number {
 }
 
 export async function flushQueuedNotes(token?: string): Promise<Note[]> {
+  if (notesFlushInFlight) return notesFlushInFlight;
   const queue = readQueue();
   if (!queue.length || !token) return [];
 
-  const applied: Note[] = [];
-  const remaining: QueuedNote[] = [];
+  notesFlushInFlight = (async () => {
+    const applied: Note[] = [];
+    const remaining: QueuedNote[] = [];
 
-  for (const item of queue) {
-    try {
-      const created = await createNote(
-        {
-          business_id: item.business_id,
-          route_id: item.route_id,
-          note_text: item.note_text,
-          outcome_status: item.outcome_status,
-          next_action: item.next_action,
-        },
-        token,
-      );
-      applied.push(created);
-    } catch {
-      remaining.push(item);
+    for (const item of queue) {
+      try {
+        const created = await createNote(
+          {
+            business_id: item.business_id,
+            route_id: item.route_id,
+            note_text: item.note_text,
+            outcome_status: item.outcome_status,
+            next_action: item.next_action,
+          },
+          token,
+        );
+        applied.push(created);
+      } catch {
+        remaining.push(item);
+      }
     }
-  }
 
-  writeQueue(remaining);
-  return applied;
+    writeQueue(remaining);
+    return applied;
+  })();
+
+  try {
+    return await notesFlushInFlight;
+  } finally {
+    notesFlushInFlight = null;
+  }
 }
 
 export function enqueueStatusChange(item: Omit<QueuedStatusChange, "queued_at">): void {
@@ -100,32 +115,42 @@ export function enqueueStatusChange(item: Omit<QueuedStatusChange, "queued_at">)
 }
 
 export async function flushQueuedStatusChanges(token?: string): Promise<SavedLead[]> {
+  if (statusFlushInFlight) return statusFlushInFlight;
   const queue = readStatusQueue();
   if (!queue.length || !token) return [];
 
-  const applied: SavedLead[] = [];
-  const remaining: QueuedStatusChange[] = [];
+  statusFlushInFlight = (async () => {
+    const applied: SavedLead[] = [];
+    const remaining: QueuedStatusChange[] = [];
 
-  for (const item of queue) {
-    try {
-      const saved = await saveLead(
-        { business_id: item.business_id, route_id: item.route_id },
-        token,
-      );
-      const updated = await updateSavedLead(
-        saved.id,
-        {
-          status: item.status,
-          next_follow_up_at: item.next_follow_up_at,
-          last_contact_attempt_at: item.last_contact_attempt_at,
-        },
-        token,
-      );
-      applied.push(updated);
-    } catch {
-      remaining.push(item);
+    for (const item of queue) {
+      try {
+        const saved = await saveLead(
+          { business_id: item.business_id, route_id: item.route_id },
+          token,
+        );
+        const updated = await updateSavedLead(
+          saved.id,
+          {
+            status: item.status,
+            next_follow_up_at: item.next_follow_up_at,
+            last_contact_attempt_at: item.last_contact_attempt_at,
+          },
+          token,
+        );
+        applied.push(updated);
+      } catch {
+        remaining.push(item);
+      }
     }
+
+    writeStatusQueue(remaining);
+    return applied;
+  })();
+
+  try {
+    return await statusFlushInFlight;
+  } finally {
+    statusFlushInFlight = null;
   }
-  writeStatusQueue(remaining);
-  return applied;
 }
