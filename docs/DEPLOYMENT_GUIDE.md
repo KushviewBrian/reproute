@@ -197,6 +197,13 @@ VALIDATION_DAILY_CAP=50
 VALIDATION_MONTHLY_CAP=2000
 VALIDATION_PER_USER_DAILY_CAP=15
 VALIDATION_ADMIN_TOKEN_TTL_SECONDS=60
+OVERPASS_ENDPOINT=https://overpass-api.de/api/interpreter
+OVERPASS_TIMEOUT_SECONDS=10
+OVERPASS_RADIUS_METERS=50
+ENRICHMENT_DAILY_CAP=100
+ENRICHMENT_MONTHLY_CAP=2000
+ENRICHMENT_PER_USER_DAILY_CAP=15
+ENRICHMENT_FRESHNESS_DAYS=30
 ```
 
 6. Click **Create Web Service**
@@ -251,6 +258,15 @@ CORS_ALLOW_ORIGINS=https://your-frontend-domain.vercel.app,https://reproute-fron
 5. Verify Redis caching is working
 6. Verify `GET https://<backend>/health` returns `200`
 7. Verify one `POST /admin/validation/run-due` call with invalid HMAC returns `401`
+
+### Troubleshooting and ongoing operations:
+See [`docs/RUNBOOK.md`](RUNBOOK.md) for quota exhaustion, outage response, rollback steps, and pilot SLA.
+
+### Overpass / OSM enrichment tuning:
+If enrichment is timing out on Render (check logs for `overpass_all_attempts_failed`):
+1. Set `OVERPASS_TIMEOUT_SECONDS=15` in Render env vars
+2. If the primary endpoint is still unreliable, switch to the mirror:
+   `OVERPASS_ENDPOINT=https://overpass.kumi.systems/api/interpreter`
 
 ---
 

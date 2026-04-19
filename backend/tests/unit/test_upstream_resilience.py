@@ -300,3 +300,161 @@ async def test_geocode_no_args_returns_empty():
     results, degraded = await geocode()
     assert results == []
     assert degraded is False
+
+
+# ---------------------------------------------------------------------------
+# Overpass / osm_enrichment_service — retry + degraded return
+# ---------------------------------------------------------------------------
+
+from app.services.osm_enrichment_service import (
+    _is_transient_overpass_error,
+    _call_overpass_with_retry,
+    fetch_osm_enrichment,
+)
+
+
+def test_overpass_timeout_is_transient():
+    assert _is_transient_overpass_error(_make_timeout_exc()) is True
+
+
+def test_overpass_connect_is_transient():
+    assert _is_transient_overpass_error(_make_connect_exc()) is True
+
+
+def test_overpass_5xx_is_transient():
+    assert _is_transient_overpass_error(_make_5xx_exc()) is True
+
+
+def test_overpass_4xx_is_not_transient():
+    assert _is_transient_overpass_error(_make_4xx_exc()) is False
+
+
+@pytest.mark.asyncio
+async def test_overpass_success_on_first_attempt():
+    payload = {"elements": [{"type": "node", "id": 1, "tags": {"phone": "+13175551234", "name": "Test Biz"}}]}
+    with patch("app.services.osm_enrichment_service.httpx.AsyncClient") as mock_client_cls:
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status = MagicMock()
+        mock_resp.json.return_value = payload
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.post = AsyncMock(return_value=mock_resp)
+        mock_client_cls.return_value = mock_client
+
+        result = await _call_overpass_with_retry("https://overpass-api.de/api/interpreter", "[out:json];", 5)
+        assert result == payload
+
+
+@pytest.mark.asyncio
+async def test_overpass_retry_then_success():
+    payload = {"elements": [{"type": "node", "id": 1, "tags": {"website": "https://example.com"}}]}
+    call_count = 0
+
+    async def mock_post(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise httpx.TimeoutException("timed out", request=MagicMock())
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status = MagicMock()
+        mock_resp.json.return_value = payload
+        return mock_resp
+
+    with patch("app.services.osm_enrichment_service.asyncio.sleep", new_callable=AsyncMock), \
+         patch("app.services.osm_enrichment_service.httpx.AsyncClient") as mock_client_cls:
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.post = mock_post
+        mock_client_cls.return_value = mock_client
+
+        result = await _call_overpass_with_retry("https://overpass-api.de/api/interpreter", "[out:json];", 5)
+        assert result == payload
+        assert call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_overpass_all_attempts_fail_returns_none():
+    with patch("app.services.osm_enrichment_service.asyncio.sleep", new_callable=AsyncMock), \
+         patch("app.services.osm_enrichment_service.httpx.AsyncClient") as mock_client_cls:
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.post = AsyncMock(side_effect=httpx.TimeoutException("timed out", request=MagicMock()))
+        mock_client_cls.return_value = mock_client
+
+        result = await _call_overpass_with_retry("https://overpass-api.de/api/interpreter", "[out:json];", 5)
+        assert result is None
+
+
+@pytest.mark.asyncio
+async def test_overpass_4xx_returns_none_no_retry():
+    call_count = 0
+
+    async def mock_post(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        resp = MagicMock()
+        resp.status_code = 400
+        raise httpx.HTTPStatusError("400", request=MagicMock(), response=resp)
+
+    with patch("app.services.osm_enrichment_service.httpx.AsyncClient") as mock_client_cls:
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.post = mock_post
+        mock_client_cls.return_value = mock_client
+
+        result = await _call_overpass_with_retry("https://overpass-api.de/api/interpreter", "[out:json];", 5)
+        assert result is None
+        assert call_count == 1  # no retry on 4xx
+
+
+@pytest.mark.asyncio
+async def test_fetch_osm_enrichment_no_elements_returns_none():
+    with patch("app.services.osm_enrichment_service.get_settings") as mock_settings, \
+         patch("app.services.osm_enrichment_service._call_overpass_with_retry", new_callable=AsyncMock) as mock_call:
+        s = MagicMock()
+        s.overpass_endpoint = "https://overpass-api.de/api/interpreter"
+        s.overpass_timeout_seconds = 5
+        s.overpass_radius_meters = 50
+        mock_settings.return_value = s
+        mock_call.return_value = {"elements": []}
+
+        result = await fetch_osm_enrichment(39.77, -86.15, "Test Biz")
+        assert result is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_osm_enrichment_overpass_down_returns_none():
+    with patch("app.services.osm_enrichment_service.get_settings") as mock_settings, \
+         patch("app.services.osm_enrichment_service._call_overpass_with_retry", new_callable=AsyncMock) as mock_call:
+        s = MagicMock()
+        s.overpass_endpoint = "https://overpass-api.de/api/interpreter"
+        s.overpass_timeout_seconds = 5
+        s.overpass_radius_meters = 50
+        mock_settings.return_value = s
+        mock_call.return_value = None  # simulates exhausted retries
+
+        result = await fetch_osm_enrichment(39.77, -86.15, "Test Biz")
+        assert result is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_osm_enrichment_extracts_phone_and_website():
+    elements = [{"type": "node", "id": 42, "tags": {"phone": "+13175551234", "website": "https://example.com", "opening_hours": "Mo-Fr 09:00-17:00"}}]
+    with patch("app.services.osm_enrichment_service.get_settings") as mock_settings, \
+         patch("app.services.osm_enrichment_service._call_overpass_with_retry", new_callable=AsyncMock) as mock_call:
+        s = MagicMock()
+        s.overpass_endpoint = "https://overpass-api.de/api/interpreter"
+        s.overpass_timeout_seconds = 5
+        s.overpass_radius_meters = 50
+        mock_settings.return_value = s
+        mock_call.return_value = {"elements": elements}
+
+        result = await fetch_osm_enrichment(39.77, -86.15, "Example Business")
+        assert result is not None
+        assert result.osm_phone == "+13175551234"
+        assert result.osm_website == "https://example.com"
+        assert result.opening_hours == "Mo-Fr 09:00-17:00"

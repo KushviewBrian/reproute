@@ -45,6 +45,17 @@ Populate these before production deploys and CI releases.
 - `ADMIN_ALLOWED_EMAILS=<comma-separated allowlist>`
 - `ADMIN_IMPORT_ALLOWED_ROOTS=<comma-separated absolute paths>`
 
+## OSM enrichment config (Render env vars)
+
+- `OVERPASS_ENDPOINT=https://overpass-api.de/api/interpreter`
+  Alternate if primary is slow/down: `https://overpass.kumi.systems/api/interpreter`
+- `OVERPASS_TIMEOUT_SECONDS=10`  (default 5; increase to 15 on Render if timing out)
+- `OVERPASS_RADIUS_METERS=50`
+- `ENRICHMENT_DAILY_CAP=100`
+- `ENRICHMENT_MONTHLY_CAP=2000`
+- `ENRICHMENT_PER_USER_DAILY_CAP=15`
+- `ENRICHMENT_FRESHNESS_DAYS=30`
+
 ## Placeholder integration status
 
 - Backend JWT verification supports JWKS signature verification + issuer/audience/azp checks when configured.
