@@ -1,6 +1,6 @@
 # RepRoute Security Plan (MVP → Pilot)
 
-Last updated: April 17, 2026
+Last updated: April 19, 2026
 
 ## 1) Scope and Security Objective
 
@@ -23,7 +23,7 @@ No plan is literally bulletproof. The objective is defense-in-depth with verifie
 These are confirmed open issues in the current codebase. Each must be closed before pilot.
 
 ### P0-1: Database TLS certificate verification disabled
-**Status: CODE IMPLEMENTED WITH EMERGENCY OVERRIDE; VERIFICATION PENDING**
+**Status: CODE IMPLEMENTED; TEST VERIFICATION COMPLETE; RUNTIME TLS CERT-CHAIN EVIDENCE PARTIAL**
 
 `backend/app/db/session.py` now supports strict verification, but it is controlled by `DATABASE_TLS_VERIFY` and can run with `CERT_NONE`:
 ```python
@@ -44,7 +44,7 @@ else:
 - Override sunset must be enforced and documented: `DATABASE_TLS_EMERGENCY_OVERRIDE_SUNSET` (date).
 
 ### P0-2: JWT signature verification is optional, not enforced
-**Status: CODE IMPLEMENTED; VERIFICATION PENDING**
+**Status: VERIFIED IN TESTS; STAGING AUTH GATING VERIFIED**
 
 `backend/app/core/auth.py` now verifies signatures in all non-dev/test environments and startup fails in production if JWT config is missing.
 ```python
@@ -60,7 +60,7 @@ Remaining work is full negative-auth regression coverage in CI/runtime.
 - `CLERK_AUDIENCE` and `CLERK_AUTHORIZED_PARTY` remain optional but should be set for defense-in-depth.
 
 ### P0-3: Admin endpoint accepts any authenticated user who knows the secret
-**Status: CODE IMPLEMENTED; VERIFICATION PENDING**
+**Status: VERIFIED IN TESTS; STAGING NEGATIVE HMAC VERIFIED**
 
 `admin_import.py` now requires admin email allowlist membership, validates `parquet_path` against allowlisted roots, and enforces single-job concurrency plus global rate limit.
 
@@ -69,14 +69,22 @@ Remaining work is full negative-auth regression coverage in CI/runtime.
 - Consider disabling the admin import endpoint entirely in production once GitHub Actions is the primary ingestion path.
 
 ### P0-4: `poc_mode` bypass has no production guard
-**Status: CODE IMPLEMENTED; VERIFICATION PENDING**
+**Status: VERIFIED IN TESTS**
 
 Startup now fails if `environment == "production"` and `poc_mode == True`.
 
 **Required fix:**
 - Add startup check: if `environment == "production"` and `poc_mode == True`, log critical and refuse to start.
 
----
+## 2.1) Phase 2 Verification Run (2026-04-19)
+
+Evidence artifact: `docs/evidence/phase2_security_signoff_2026-04-19.md`
+
+Key outcomes:
+- Backend security suites: `58 passed`
+- Staging checks: `/health` 200; protected endpoints reject missing bearer token; validation admin endpoint rejects missing/invalid HMAC
+- Open deltas before full Gate 1 close:
+  - authenticated staging smoke success-path capture (`route/leads/today/export`) still pending
 
 ## 3) Threat Model (Practical)
 
@@ -132,7 +140,7 @@ JWKS now uses a 1-hour TTL cache. Remaining work is integration validation durin
 - No endpoint may accept a `user_id` from the client for authorization decisions.
 - Admin endpoints require elevated policy beyond user auth (see P0-3).
 
-**Current state:** User-scoped filtering is implemented in routes, leads, saved-leads, notes, and export. Cross-user access has not been systematically tested with negative tests.
+**Current state:** User-scoped filtering is implemented in routes, leads, saved-leads, notes, and export. Cross-user access negative tests are implemented and passing in the security suite.
 
 **Implementation checklist:**
 - [x] Negative tests for cross-user access on all owned resources: routes, saved-leads, notes, export
@@ -177,7 +185,7 @@ JWKS now uses a 1-hour TTL cache. Remaining work is integration validation durin
 **Policy:**
 - Secrets only in platform secret stores: Render env vars, GitHub Actions secrets, Cloudflare Worker secrets, Supabase vault.
 - `.env` files excluded from git via `.gitignore` — verified.
-- Pre-commit + CI secret scanning required (not yet active — see §4.7).
+- Pre-commit + CI secret scanning required (CI scan is active; see §4.7).
 - Rotate all secrets **quarterly** or immediately on leak suspicion.
 
 **Rotation procedure (for each secret):**
@@ -498,8 +506,8 @@ Close all P0 items.
 - [x] Request body size limit middleware active
 
 ### Secrets and Supply Chain
-- [x] Secret scanning active in CI; no hardcoded secrets found in repo
-- [ ] Frontend build contains no backend secrets (`grep` check passes)
+- [x] Secret scanning active in CI; findings triaged/resolved (or allowlisted) with clean rerun
+- [x] Frontend build contains no backend secrets (`grep` check passes)
 - [x] `pip-audit` and `npm audit` pass in CI with no high-severity findings
 - [ ] Branch protection active on `main` with required reviews for sensitive paths
 

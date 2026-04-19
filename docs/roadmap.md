@@ -1,6 +1,6 @@
 # RepRoute Master Roadmap
 
-Updated: April 19, 2026 (offline queue global flush hardening + scoring v2 quality pass + startup lifecycle compatibility fixes)
+Updated: April 19, 2026 (Phase 2 verification evidence run + offline queue global flush hardening + scoring v2 quality pass + startup lifecycle compatibility fixes)
 
 ## Purpose
 
@@ -78,9 +78,9 @@ RepRoute is a route-aware field sales prospecting platform for B2B reps. Insuran
 
 ### Confirmed open gaps (must close before pilot)
 
-- Security P0 is not yet closed: P0-2/3/4 are implemented and P0-1 strict TLS code path is now restored with emergency override controls; verification/sign-off remains open (see Phase 2)
-- Security P1 verification and CI/security operations tasks are still incomplete (see Phase 2); `VALIDATION_HMAC_SECRET` startup guard now closed
-- Backend security test coverage expanded further (startup HMAC secret + CORS regex compile checks, explicit cross-user validation denial); CI/runtime evidence sign-off still open
+- Security P0 verification is partially closed: startup/auth/authz/admin/HMAC suites pass and staging negative auth/HMAC smoke is captured; remaining runtime sign-off deltas are authenticated success-path smoke and explicit live TLS cert-chain verification evidence (see Phase 2 + `docs/evidence/phase2_security_signoff_2026-04-19.md`)
+- Security scanner remediation is complete in-repo (`starlette` pin, CI pip upgrade, gitleaks false-positive allowlist); CI-linked confirmation URL remains open in this session
+- Backend security test coverage and staging negative-path runtime evidence are current; authenticated staging success-path evidence and CI-linked run URLs remain open
 - Phase 5 evidence sign-off still open (10+ sample runs with correct outcomes required before gate can close)
 - Phase 6 OSM enrichment deployed; Overpass public endpoint timing out on Render — set OVERPASS_TIMEOUT_SECONDS and OVERPASS_ENDPOINT env vars to tune; evidence sign-off pending once enrichment hits confirm
 - Scoring calibration evidence is incomplete (5-route evidence + `Other/Unknown` threshold sign-off) (see Phase 3)
@@ -161,7 +161,7 @@ The route geometry, corridor query, and Overture ingestion pipeline are implemen
 
 ### Phase 2 — Security Lockdown (MVP Critical)
 
-**Status: In progress — P0-1/2/3/4 code landed with emergency controls + key P1 controls landed + expanded security/runtime tests; verification/sign-off incomplete**
+**Status: In progress — P0-1/2/3/4 code landed with emergency controls + key P1 controls landed; test verification and staging negative-path evidence captured, scanner/sign-off deltas remain**
 
 This is the highest-risk open work. All P0 items must close before pilot traffic. Security work that is backend-only can be parallelized against Phase 3 frontend work.
 
@@ -607,7 +607,7 @@ MVP is complete when all are true:
 |---|---|---|---|
 | 0 | Baseline reliability | In progress | Medium |
 | 1 | Data/routing foundation evidence | Mostly done | Medium |
-| 2 | Security lockdown | In progress (P0 + key P1 code landed) | Medium |
+| 2 | Security lockdown | In progress (verification run captured; scanner/runtime deltas remain) | Medium |
 | 3 | Scoring + score explanation | In progress (v2 shadow + quality pass landed; evidence incomplete) | Medium |
 | 4 | Discovery UX + workflow completion | In progress (dedup/onboarding landed; verification incomplete) | Medium |
 | 5 | Lead validation system | Feature complete — evidence sign-off remaining | High |
@@ -622,7 +622,7 @@ MVP is complete when all are true:
 
 1. **Close evidence blockers for Phases 1/3/5** — run EXPLAIN, ingestion QA, 5-route scoring, and validation runtime evidence package against staging credentials, then attach artifact links and timestamps in `docs/PHASE1_4_VALIDATION.md`.
 2. **Close external platform blockers** — enforce branch protection, enable `/health` monitoring alerts, and wire log forwarding from Render with evidence links.
-3. **Finish Phase 2 verification/sign-off evidence** — run full negative auth/authz + middleware/security-header + startup-config suites in CI and log commit/CI references in `securityplan.md` and gate closeout entries.
+3. **Close remaining Phase 2 sign-off deltas** — capture authenticated staging success-path smoke (`route/leads/today/export`) and attach CI run links for the remediated scanner/test suite in `securityplan.md` and gate closeout entries.
 4. **Close remaining Phase 1 evidence** — replace EXPLAIN placeholder and commit one ingestion QA artifact with route IDs, commands, and p95 context in `docs/evidence/`.
 5. **Close Phase 3/4 verification evidence** — commit 5-route scoring artifact (`Other/Unknown` rate), offline reconnect no-loss proof (notes + status), dedup spot-check, and Today dashboard correctness checks.
 6. **Close Phase 5 evidence sign-off** — run 10+ validation jobs on real saved leads, verify correct state/confidence outcomes for website and phone fields, commit results to evidence log.

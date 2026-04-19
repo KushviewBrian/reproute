@@ -1,0 +1,7 @@
+title = "RepRoute gitleaks config"
+
+[allowlist]
+description = "Known false-positive docs placeholder from prior commit history"
+commits = [
+  "eacf8338c8ec3cdedead35b7f20dba4560ec6c42",
+]

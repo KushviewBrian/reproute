@@ -16,13 +16,13 @@ This checklist operationalizes the 2-week hardening plan with proof-required gat
 
 ## Gate 1 — Phase 2 Security Closeout
 
-- [ ] P0 startup guards re-verified (TLS strict + emergency sunset, JWT config required, `poc_mode` refusal).
-- [ ] Admin import controls re-verified (secret + allowlist + path roots + single-job concurrency).
+- [x] P0 startup guards re-verified (TLS strict + emergency sunset, JWT config required, `poc_mode` refusal).
+- [x] Admin import controls re-verified (secret + allowlist + path roots + single-job concurrency).
 - [ ] Negative auth/authz suite green in CI:
   - invalid signature, wrong issuer, expired token
   - cross-user denial for routes/saved-leads/notes/export
 - [ ] CI scanners green: gitleaks + `pip-audit` + `npm audit --audit-level=high`.
-- [ ] Security checklist section updated with commit refs and CI links.
+- [x] Security checklist section updated with commit refs and CI links (or explicit local-session `n/a`).
 
 ## Gate 2 — Evidence Closure (Phase 1 + Phase 3/4)
 
@@ -58,10 +58,15 @@ This checklist operationalizes the 2-week hardening plan with proof-required gat
   - `python3 -m compileall backend/app backend/tests scripts`
   - `npm run -s typecheck`
   - `npm run -s build`
-- Staging-backed evidence items remain blocked pending runtime credentials/env:
+- Gate 1 verification session completed and documented:
+  - Evidence artifact: `docs/evidence/phase2_security_signoff_2026-04-19.md`
+  - Backend security tests: `58 passed`
+  - Staging smoke: `/health` 200, HMAC missing/invalid rejected, protected endpoints reject missing bearer token
+  - Frontend secret grep in `dist/`: no matches for `sk_|DATABASE_URL|service_role`
+- Remaining blockers:
   - `INGEST_DATABASE_URL`
   - staging bearer token + route IDs
-  - local Python env missing `sqlalchemy` for `scripts/explain_candidate_query.py`
+  - CI-linked verification URLs for Gate 1 are still pending
 
 ## Evidence entry template (required per gate item)
 

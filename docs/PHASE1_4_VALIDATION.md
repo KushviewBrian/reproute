@@ -42,11 +42,12 @@ Evidence links:
 - Recorded evidence and blockers in:
   - `docs/evidence/session_roadmap_closure_2026-04-19.md`
   - `docs/evidence/gate_closeout_2026-04-19.md`
+  - `docs/evidence/phase2_security_signoff_2026-04-19.md`
 
-Blocked (staging dependencies unavailable in local session):
+Blocked (remaining after this session):
 - `INGEST_DATABASE_URL` not configured locally, so ingestion QA command was not executed to avoid writes against unknown DB target.
 - Scoring/validation runtime evidence requires staging bearer token and route IDs (not available in local env files).
-- `scripts/explain_candidate_query.py` execution blocked locally due missing `sqlalchemy` in local Python environment.
+- CI-linked evidence URLs are still open for this session.
 
 ## Latest Evidence Snapshot (2026-04-17)
 
@@ -56,21 +57,25 @@ Blocked (staging dependencies unavailable in local session):
   - Route IDs: pending production capture (`validate_scoring.py` now supports output artifact with per-route metrics and `other_unknown_rate`)
   - p95 capture: pending production capture
 
-## Gate 1 Security Verification Checklist (2026-04-17)
+## Gate 1 Security Verification Checklist (updated 2026-04-19)
 
-- [ ] Production startup fails when DB TLS is insecure and emergency override is disabled.
-- [ ] Emergency override path verified with sunset guard.
-- [ ] Invalid signature / wrong issuer / expired token tests green.
-- [ ] Cross-user access denial tests green for routes, saved leads, notes, export.
+- [x] Production startup fails when DB TLS is insecure and emergency override is disabled.
+- [x] Emergency override path verified with sunset guard.
+- [x] Invalid signature / wrong issuer / expired token tests green.
+- [x] Cross-user access denial tests green for routes, saved leads, notes, export.
 - [ ] CI security scanners green (gitleaks + pip-audit + npm audit).
-- [ ] Admin import allowlist/path/concurrency protections verified.
-- [ ] Validation admin HMAC enforcement verified (`/admin/validation/run-due`).
+- [x] Admin import allowlist/path/concurrency protections verified.
+- [x] Validation admin HMAC enforcement verified (`/admin/validation/run-due`).
 - [ ] Production smoke passes under Supabase pooler (route create, lead fetch, today view, exports).
 
 Evidence links:
-- Commit(s): `TODO`
-- CI run(s): `TODO`
-- Notes: `TODO`
+- Commit(s): `7944b29` (baseline for verification session)
+- CI run(s): `n/a in this local/staging session`
+- Notes:
+  - Security suite result: `58 passed`
+  - Scanner rerun result: `pip-audit` clean, `gitleaks` clean, `npm audit --audit-level=high` pass (moderate-only findings)
+  - Staging smoke: `/health` 200; `/admin/validation/run-due` rejects missing/invalid HMAC; protected endpoints reject missing bearer token
+  - Full evidence package: `docs/evidence/phase2_security_signoff_2026-04-19.md`
 
 ## Gate 2 Evidence Checklist (Phase 1 + Phase 3/4)
 

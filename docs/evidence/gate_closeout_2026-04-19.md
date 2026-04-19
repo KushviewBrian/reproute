@@ -3,8 +3,8 @@
 Date (UTC): 2026-04-19
 Commit SHA: pending local commit
 PR: n/a (local session)
-CI Run URL(s): n/a (local session)
-Deployed Env (staging/production): none (repo-local only)
+CI Run URL(s): n/a (local + staging runtime checks)
+Deployed Env (staging/production): staging runtime checks against `https://reproute.onrender.com`
 
 ### Gate 0 — Stabilization Baseline + Merge Controls
 - [ ] Required checks enforced on `main`
@@ -23,19 +23,28 @@ Evidence:
   - Revert this session commit to restore prior docs/frontend queue behavior.
 
 ### Gate 1 — Phase 2 Security Closeout
-- [ ] Startup guards verified (`TLS strict`, `poc_mode`, JWT env requirements)
-- [ ] Admin import protections verified (secret/allowlist/path/concurrency)
-- [ ] Negative auth/authz tests green
-- [ ] Security scans green (`gitleaks`, `pip-audit`, `npm audit`)
-- [ ] Pooler compatibility smoke verified (route/leads/today/export)
+- [x] Startup guards verified (`TLS strict`, `poc_mode`, JWT env requirements)
+- [x] Admin import protections verified (secret/allowlist/path/concurrency)
+- [x] Negative auth/authz tests green
+- [ ] Security scans green (`gitleaks`, `pip-audit`, `npm audit`) in CI (local rerun is green)
+- [ ] Pooler compatibility smoke verified (route/leads/today/export authenticated success paths)
 
 Evidence:
 - Test logs:
-  - Local `pytest` unavailable (`command not found: pytest`)
+  - `PYTHONPATH=$PWD/backend .venv313/bin/python -m pytest -q ...` => `58 passed in 0.94s`
+  - `npm run -s typecheck` => pass
+  - `npm run -s build` => pass
+  - `pip-audit` => pass after remediation (`No known vulnerabilities found`)
+  - `npm audit --audit-level=high` => pass threshold (moderate-only findings)
+  - `gitleaks detect` => pass after allowlist of known historical false-positive commit
 - CI run:
-  - Not executed in this local session
+  - n/a in this session
 - Runtime smoke notes:
-  - Staging credentials/runtime access unavailable in this session context
+  - `GET /health` => 200 with `{"status":"ok","db":"ok","redis":"ok"}`
+  - `POST /admin/validation/run-due` missing headers => 401
+  - `POST /admin/validation/run-due` invalid signature => 401
+  - protected endpoints without bearer token (`POST /routes`, `GET /saved-leads/today`, `GET /export/saved-leads.csv`) => 401
+  - Full artifact: `docs/evidence/phase2_security_signoff_2026-04-19.md`
 
 ### Gate 2 — Evidence Closure (Phases 1/3/4)
 - [ ] EXPLAIN artifact committed (route-specific)
@@ -67,7 +76,7 @@ Evidence:
 
 Evidence:
 - Test logs:
-  - Existing coverage in repo; not rerun locally due missing `pytest`
+  - Existing coverage in repo; Gate 3 runtime package not rerun in this session
 - API traces:
   - blocked pending staging credentials
 - Artifact paths:
