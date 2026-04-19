@@ -1,13 +1,13 @@
 """add is_blue_collar and owner contact fields
 
-Revision ID: 0008_blue_collar_and_owner_contact
+Revision ID: 0008_blue_collar_owner_contact
 Revises: 0007_scoring_geo_key_and_indexes
 Create Date: 2026-04-19
 """
 
 from alembic import op
 
-revision = "0008_blue_collar_and_owner_contact"
+revision = "0008_blue_collar_owner_contact"
 down_revision = "0007_scoring_geo_key_and_indexes"
 branch_labels = None
 depends_on = None
