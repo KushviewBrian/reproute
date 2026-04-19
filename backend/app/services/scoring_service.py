@@ -76,21 +76,22 @@ def actionability_score_v2(
     invalid_field_count: int,
     hard_failure_count: int,
 ) -> int:
-    score = 20.0
+    raw_score = 20.0
     if has_address:
-        score += 25
+        raw_score += 25
     if has_phone:
-        score += 20
+        raw_score += 20
     if has_website:
-        score += 20
+        raw_score += 20
     if confidence is not None:
-        score += 15 * max(min(confidence, 1.0), 0.0)
+        raw_score += 15 * max(min(confidence, 1.0), 0.0)
     if validation_confidence is not None:
-        score += 20 * max(min(validation_confidence / 100.0, 1.0), 0.0)
+        raw_score += 20 * max(min(validation_confidence / 100.0, 1.0), 0.0)
     if last_seen_at:
         age_days = max((datetime.now(timezone.utc) - last_seen_at).days, 0)
         freshness = max(0.5, 1.0 - (age_days / 180.0))
-        score *= freshness
+        raw_score *= freshness
+    score = clamp_score(raw_score)
     # Penalize leads with repeated invalid/hard validation failures.
     score -= min(20.0, (max(invalid_field_count, 0) * 3.5) + (max(hard_failure_count, 0) * 6.0))
     return clamp_score(score)

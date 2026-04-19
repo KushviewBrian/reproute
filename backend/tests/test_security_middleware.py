@@ -31,7 +31,7 @@ def test_request_body_limit_enforced() -> None:
     settings.request_body_limit_bytes = 16
     try:
         client = TestClient(app)
-        response = client.post("/", data="x" * 32)
+        response = client.post("/", content="x" * 32)
         assert response.status_code == 413
         assert response.json().get("detail") == "Request body too large"
     finally:

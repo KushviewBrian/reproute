@@ -1,4 +1,5 @@
 import logging
+from contextlib import asynccontextmanager
 from datetime import date
 
 from fastapi import FastAPI, Request, Response
@@ -12,7 +13,54 @@ from app.db.session import is_db_tls_config_secure
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Reproute API", version="0.1.0")
+def _validate_startup_config() -> None:
+    import re as _re
+
+    logger.info("=== Reproute API starting up ===")
+    s = get_settings()
+    if s.is_production() and s.poc_mode:
+        logger.critical("Refusing startup: POC_MODE must be false in production")
+        raise RuntimeError("Invalid startup config: POC_MODE=true in production")
+    if s.is_production() and not is_db_tls_config_secure():
+        if (
+            s.database_tls_emergency_insecure_override
+            and date.today() <= s.database_tls_emergency_override_sunset
+        ):
+            logger.critical(
+                "Emergency DB TLS override active until %s; startup allowed with insecure DB TLS",
+                s.database_tls_emergency_override_sunset.isoformat(),
+            )
+        else:
+            logger.critical("Refusing startup: insecure DB TLS settings in production")
+            raise RuntimeError("Invalid startup config: insecure DB TLS settings")
+    if s.is_production():
+        if not s.clerk_jwks_url.strip():
+            raise RuntimeError("Invalid startup config: CLERK_JWKS_URL is required in production")
+        if not s.clerk_jwt_issuer.strip():
+            raise RuntimeError("Invalid startup config: CLERK_JWT_ISSUER is required in production")
+        if not s.validation_hmac_secret.strip():
+            raise RuntimeError("Invalid startup config: VALIDATION_HMAC_SECRET is required in production")
+    if cors_origin_regex:
+        try:
+            _re.compile(cors_origin_regex)
+        except _re.error as exc:
+            raise RuntimeError(f"Invalid startup config: CORS_ALLOW_ORIGIN_REGEX is not a valid regex: {exc}") from exc
+    logger.info("environment=%s poc_mode=%s", s.environment, s.poc_mode)
+    logger.info("database_configured=%s", bool(s.database_url))
+    logger.info("redis_configured=%s", bool(s.redis_url))
+    logger.info("geocode_worker_url=%s", s.geocode_worker_url)
+    logger.info("cors_origins=%s", cors_origins)
+    logger.info("cors_origin_regex=%s", cors_origin_regex)
+    logger.info("=== startup complete ===")
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    _validate_startup_config()
+    yield
+
+
+app = FastAPI(title="Reproute API", version="0.1.0", lifespan=lifespan)
 
 # CORS configuration - origins read from config/env var CORS_ALLOW_ORIGINS (comma-separated)
 _settings = get_settings()
@@ -75,48 +123,6 @@ async def request_size_and_security_headers(request: Request, call_next):
             client_host,
         )
     return response
-
-
-@app.on_event("startup")
-async def startup():
-    import re as _re
-
-    logger.info("=== Reproute API starting up ===")
-    s = get_settings()
-    if s.is_production() and s.poc_mode:
-        logger.critical("Refusing startup: POC_MODE must be false in production")
-        raise RuntimeError("Invalid startup config: POC_MODE=true in production")
-    if s.is_production() and not is_db_tls_config_secure():
-        if (
-            s.database_tls_emergency_insecure_override
-            and date.today() <= s.database_tls_emergency_override_sunset
-        ):
-            logger.critical(
-                "Emergency DB TLS override active until %s; startup allowed with insecure DB TLS",
-                s.database_tls_emergency_override_sunset.isoformat(),
-            )
-        else:
-            logger.critical("Refusing startup: insecure DB TLS settings in production")
-            raise RuntimeError("Invalid startup config: insecure DB TLS settings")
-    if s.is_production():
-        if not s.clerk_jwks_url.strip():
-            raise RuntimeError("Invalid startup config: CLERK_JWKS_URL is required in production")
-        if not s.clerk_jwt_issuer.strip():
-            raise RuntimeError("Invalid startup config: CLERK_JWT_ISSUER is required in production")
-        if not s.validation_hmac_secret.strip():
-            raise RuntimeError("Invalid startup config: VALIDATION_HMAC_SECRET is required in production")
-    if cors_origin_regex:
-        try:
-            _re.compile(cors_origin_regex)
-        except _re.error as exc:
-            raise RuntimeError(f"Invalid startup config: CORS_ALLOW_ORIGIN_REGEX is not a valid regex: {exc}") from exc
-    logger.info("environment=%s poc_mode=%s", s.environment, s.poc_mode)
-    logger.info("database_configured=%s", bool(s.database_url))
-    logger.info("redis_configured=%s", bool(s.redis_url))
-    logger.info("geocode_worker_url=%s", s.geocode_worker_url)
-    logger.info("cors_origins=%s", cors_origins)
-    logger.info("cors_origin_regex=%s", cors_origin_regex)
-    logger.info("=== startup complete ===")
 
 
 @app.get("/")
