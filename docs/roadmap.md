@@ -1,6 +1,6 @@
 # RepRoute Master Roadmap
 
-Updated: April 19, 2026 (All roadmap code tasks complete — commit d180f8a)
+Updated: April 19, 2026 (All roadmap code tasks complete — commit d180f8a; Phase 10 plan added)
 
 ## Purpose
 
@@ -16,6 +16,7 @@ This roadmap is the canonical execution plan for RepRoute. It consolidates and s
 | QA evidence and verification log | `docs/PHASE1_4_VALIDATION.md` |
 | Reliability gate execution checklist | `docs/RELIABILITY_EXECUTION_CHECKLIST.md` |
 | Gate closeout reporting template | `docs/GATE_CLOSEOUT_TEMPLATE.md` |
+| Lead sorting, grouping, and owner-contact spec | `docs/phase10_lead_intelligence.md` |
 
 **If any supporting document conflicts with this file, this roadmap is the source of truth for delivery order and gate criteria.**
 
@@ -577,8 +578,248 @@ Run structured pilot sessions with real reps. Measure against KPI targets. Itera
 - Security and operational gates remain green for 2+ consecutive weeks
 - No P0 or P1 security issues open
 - Confidence calibration plan in place for Phase 10
+- Phase 10 lead intelligence plan reviewed and sequenced
 
 **Blocking dependencies:** Phases 5–8 complete
+
+---
+
+### Phase 10 — Lead Intelligence: Sorting, Grouping, Blue-Collar Category, and Owner Contact
+
+**Status: Not started**
+
+**Scope:**
+Deepen lead handling quality and rep control across every tab. This phase introduces a blue-collar meta-category for faster vertical-within-vertical targeting, a structured owner/contact name field with multi-source extraction and validation, meaningful server-side sort and filter expansion, and user-controlled grouping on the lead list and saved tabs. The Today view gains configurable sections. Exports gain the new fields. This is fundamentally a data model + API + workflow phase — UI elements are included only where required to expose the new capabilities.
+
+**What this phase does NOT do:** full UI redesign, new map features, new route geometry logic, new upstream data sources beyond what Phase 6 already established.
+
+---
+
+**Deliverables — 10-A: Blue-Collar Meta-Category**
+
+The existing `insurance_class` values already capture the right atoms. Blue-collar is a derived grouping, not a new class. Implementation:
+
+- Add `is_blue_collar` boolean column to `business` (default `false`, non-null, indexed)
+- Definition: `is_blue_collar = insurance_class IN ('Auto Service', 'Contractor / Trades', 'Personal Services')` — captures hands-on, owner-operated, in-person service businesses that are the highest-value insurance prospects
+- Populate via migration backfill on existing rows; set on insert/upsert in `ingest_overture.py` and `classification_service.py`
+- Scoring service: `is_blue_collar` businesses receive a +5 additive bonus to `fit_score` (non-breaking; does not change v1 vs v2 gating)
+- API filter: add `blue_collar=true/false` query param to `GET /leads` and `GET /saved-leads`
+- API sort: blue-collar-first sort mode (`sort_by=blue_collar_score` — sorts `is_blue_collar DESC, final_score DESC`)
+- Export: add `is_blue_collar` column to both per-route and cross-route CSV exports
+- `classification_service.py` extension: add additional category mappings that clearly belong in blue-collar but currently fall to Other Commercial — specifically: auto detailing, auto glass, towing, welding/fabrication, pest control, landscaping/lawn care, pressure washing, painting contractor, cleaning services, locksmith
+
+**Migration:** `0006_blue_collar_and_owner_contact.py`
+```sql
+ALTER TABLE business
+  ADD COLUMN is_blue_collar BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN owner_name TEXT,
+  ADD COLUMN owner_name_source TEXT,  -- 'manual' | 'website_jsonld' | 'website_text' | 'osm_operator' | 'unknown'
+  ADD COLUMN owner_name_confidence REAL,  -- 0.0–1.0
+  ADD COLUMN owner_name_last_checked_at TIMESTAMPTZ;
+
+CREATE INDEX idx_business_is_blue_collar ON business (is_blue_collar);
+CREATE INDEX idx_business_owner_name ON business (owner_name) WHERE owner_name IS NOT NULL;
+
+-- Backfill is_blue_collar from existing insurance_class
+UPDATE business
+SET is_blue_collar = TRUE
+WHERE insurance_class IN ('Auto Service', 'Contractor / Trades', 'Personal Services');
+```
+
+---
+
+**Deliverables — 10-B: Owner / Contact Name**
+
+Goal: give reps a name to use when they walk in the door. Even a partial or low-confidence name is better than nothing — but it must be clearly labeled with its confidence level so reps do not rely on it blindly.
+
+**Data model** (in migration 0006 above):
+- `owner_name TEXT` — raw name as extracted; may be a full name, first name only, or business owner title
+- `owner_name_source TEXT` — enum: `manual` (rep-entered), `website_jsonld` (JSON-LD Person schema), `website_text` (heuristic page scrape), `osm_operator` (OSM `operator` tag), `unknown`
+- `owner_name_confidence REAL` — 0.0–1.0; source-based baseline: jsonld=0.85, osm_operator=0.70, website_text=0.50, manual=1.0
+- `owner_name_last_checked_at TIMESTAMPTZ` — for freshness gating (re-check if > 60 days old and business is saved)
+
+**Extraction sources (in priority order):**
+
+1. **JSON-LD Person schema** — during Phase 5 website validation fetch, if a `Person` or `LocalBusiness.employee` schema is present, extract `name`. This is the highest-confidence automated source. Wire into `validation_service.py` as an additional field parsed from the JSON-LD payload already being fetched.
+
+2. **OSM `operator` tag** — the Overpass fetch in `osm_enrichment_service.py` already retrieves all tags. Add `operator` to the tag extraction; store as `owner_name` when no higher-confidence source exists. OSM `operator` is often the business owner's name for sole proprietorships (confidence: 0.70).
+
+3. **Website text heuristics** — secondary pass during Phase 5 website crawl: scan for patterns like "Owner: [Name]", "Founded by [Name]", "Contact [Name]" in `<meta>`, `<h1–h3>`, and footer text. Truncate and normalize. Confidence: 0.50.
+
+4. **Manual rep entry** — `PATCH /saved-leads/{id}` gains an `owner_name` field that reps can set from the lead detail view. Manual entry is always confidence 1.0 and is never overwritten by automated extraction.
+
+**Write rules:**
+- Never overwrite a `manual` source with an automated one
+- Only overwrite a lower-confidence automated source with a higher-confidence one
+- If website fetch fails, do not clear an existing `owner_name`; leave it in place with its existing confidence
+
+**API surface:**
+- `GET /leads` response: add `owner_name`, `owner_name_source`, `owner_name_confidence` to the lead schema
+- `GET /saved-leads` response: same
+- `PATCH /saved-leads/{id}`: add `owner_name` (rep-editable; sets source to `manual`, confidence 1.0)
+- `GET /leads` filter: `has_owner_name=true` — filter to leads where `owner_name IS NOT NULL`
+- `GET /saved-leads` filter: same
+- Export: add `owner_name`, `owner_name_source`, `owner_name_confidence` columns to both CSV exports
+
+**Validation integration:**
+- Add `owner_name` as a pinnable field in `lead_field_validation` — field_name = `owner_name`
+- Confidence displayed in evidence drawer alongside website/phone/address/hours
+- A manually entered owner name is treated as pinned by default (skip automated re-extraction)
+
+**UI elements (minimal — data surface only):**
+- Lead card: if `owner_name` is present, show it beneath the business name with a confidence indicator (high/medium/low chip)
+- Lead detail: editable owner name field with source label; confidence chip; "Re-check" button triggers a fresh website JSON-LD pass for that business
+- Saved lead export: owner_name column included automatically
+
+---
+
+**Deliverables — 10-C: Expanded Server-Side Sorting**
+
+Current state: sort is client-side only (`score` or `business_type`). No sort param reaches the backend.
+
+Add `sort_by` and `sort_dir` query params to `GET /leads` and `GET /saved-leads`:
+
+| `sort_by` value | Description |
+|---|---|
+| `score` | `final_score DESC` (current default) |
+| `blue_collar_score` | `is_blue_collar DESC, final_score DESC` |
+| `name` | `business.name ASC/DESC` |
+| `distance` | `distance_m ASC/DESC` |
+| `validation_confidence` | `lead_field_validation.overall_confidence DESC NULLS LAST` |
+| `follow_up_date` | `next_follow_up_at ASC NULLS LAST` (saved leads only) |
+| `last_contact` | `last_contact_attempt_at DESC NULLS LAST` (saved leads only) |
+| `owner_name` | `owner_name ASC NULLS LAST` (leads with owner name first) |
+| `saved_at` | `saved_lead.created_at DESC` (saved leads only) |
+
+- `sort_dir`: `asc` | `desc` (default per sort_by as noted above)
+- Multi-key sort: primary + secondary. `sort_by=blue_collar_score` implies `is_blue_collar DESC, final_score DESC`. Others use `name ASC` as tiebreaker.
+- Frontend sort controls updated to use server-side params; client-side sort removed (single source of truth)
+- Backend enforces an allowlist of valid `sort_by` values; unknown values return 422
+
+---
+
+**Deliverables — 10-D: Expanded Server-Side Filtering**
+
+Add the following filter params to `GET /leads` and/or `GET /saved-leads`:
+
+| Param | Type | Applies to | Description |
+|---|---|---|---|
+| `blue_collar` | bool | both | Filter to `is_blue_collar = true/false` |
+| `has_owner_name` | bool | both | Filter to leads where `owner_name IS NOT NULL` |
+| `min_validation_confidence` | float 0–1 | both | Filter by overall validation confidence |
+| `validation_state` | enum | both | `validated`, `mostly_valid`, `needs_review`, `low_confidence`, `unchecked` |
+| `operating_status` | enum | both | `open`, `possibly_closed`, `unknown` (maps to `business.operating_status`) |
+| `score_band` | enum | both | `high` (≥70), `medium` (40–69), `low` (<40) |
+| `has_notes` | bool | saved | Filter to saved leads that have at least one note |
+| `status` | enum[] | saved | Existing; ensure multi-value works correctly |
+| `saved_after` | date | saved | `saved_lead.created_at >= date` |
+| `saved_before` | date | saved | `saved_lead.created_at <= date` |
+| `due_before` | date | saved | Existing; confirm works with new sort |
+| `overdue_only` | bool | saved | `next_follow_up_at < now() AND status NOT IN ('called','visited','not_interested')` |
+| `untouched_only` | bool | saved | `last_contact_attempt_at IS NULL` |
+
+All filters are additive (AND). Invalid values return 422 with a descriptive message.
+
+---
+
+**Deliverables — 10-E: Grouping on Lead List and Saved Tabs**
+
+Add a `group_by` query param to `GET /leads` and `GET /saved-leads`. The API returns results in grouped sections rather than a flat list. Each section has a `group_key`, `group_label`, `count`, and `leads[]` array.
+
+| `group_by` value | Groups |
+|---|---|
+| `insurance_class` | One section per class; ordered by fit score (blue-collar classes first by default) |
+| `blue_collar` | Two sections: "Blue Collar" then "Other" |
+| `score_band` | Three sections: High (≥70), Medium (40–69), Low (<40) |
+| `validation_state` | Five sections: Validated → Unchecked |
+| `follow_up_urgency` | Four sections: Overdue, Due Today, Upcoming, No Date (saved leads only) |
+| `contact_status` | Three sections: Contacted, Saved/Untouched, Not Interested (saved leads only) |
+| `owner_name_status` | Two sections: Has Owner Name, No Owner Name |
+
+- No `group_by` param = flat list (current behavior, backward-compatible)
+- Within each group, the active `sort_by` and `sort_dir` apply
+- Empty groups are omitted from the response
+- Response schema: `{ groups: [{ key, label, count, leads[] }] }` when grouped; `{ leads[] }` when flat
+- Frontend: renders section headers between groups with count badges; collapsible (collapsed state persisted in localStorage)
+
+---
+
+**Deliverables — 10-F: Today View Improvements**
+
+- Add a **Blue Collar Today** section: overdue + due today filtered to `is_blue_collar = true`, capped at 5 — surfaces the highest-priority blue-collar follow-ups in one glance
+- Add a **Has Owner Name** section: top 5 unsaved high-score leads where `owner_name IS NOT NULL` — "ready to approach" leads where the rep has a name
+- Section priority order becomes user-configurable: stored in `user_preferences` (new table or `saved_lead` metadata — TBD); default order: Overdue → Due Today → Blue Collar Today → High Priority Untouched → Has Owner Name → Recent Route
+- Empty sections are always hidden; minimum 1 lead required to show a section
+- `GET /saved-leads/today` response schema extended with new sections; existing sections unchanged (backward-compatible)
+
+---
+
+**Deliverables — 10-G: Export Enhancements**
+
+Both the per-route CSV (`GET /export/routes/{id}/leads.csv`) and cross-route CSV (`GET /export/saved-leads.csv`) gain new columns:
+
+| New column | Source |
+|---|---|
+| `is_blue_collar` | `business.is_blue_collar` |
+| `owner_name` | `business.owner_name` |
+| `owner_name_source` | `business.owner_name_source` |
+| `owner_name_confidence` | `business.owner_name_confidence` |
+| `validation_state` | overall validation state label |
+| `operating_status` | `business.operating_status` |
+
+- Columns are appended after existing columns — no column reordering (preserves existing AMS import mappings)
+- `owner_name_confidence` exported as a percentage string (`"85%"`) for readability in AMS
+- Add `group_by` filter support to cross-route export: `GET /export/saved-leads.csv?group_by=insurance_class` produces a CSV with a blank separator row and group header between sections
+
+---
+
+**Database migrations required (0006):**
+- `business.is_blue_collar` BOOLEAN NOT NULL DEFAULT FALSE + index
+- `business.owner_name` TEXT nullable
+- `business.owner_name_source` TEXT nullable
+- `business.owner_name_confidence` REAL nullable
+- `business.owner_name_last_checked_at` TIMESTAMPTZ nullable
+- Backfill `is_blue_collar` from `insurance_class`
+- Index on `owner_name` (partial, WHERE NOT NULL)
+
+**Classification service updates required:**
+- `classify()` returns `(insurance_class, is_blue_collar)` tuple; callers updated
+- Expand blue-collar category mappings: auto detailing, auto glass, towing, welding/fabrication, pest control, landscaping/lawn care, pressure washing, painting contractor, cleaning services, locksmith
+- `NAME_KEYWORDS` expanded with blue-collar name signals: `"detail"`, `"tow"`, `"weld"`, `"pest"`, `"lawn"`, `"landscape"`, `"pressure wash"`, `"paint"`, `"clean"`, `"lock"`
+
+**Scoring service updates required:**
+- `is_blue_collar` parameter added to `compute_score()` and `compute_score_v2()`
+- +5 additive bonus to `fit_score` when `is_blue_collar = true` (does not affect `distance_score` or `actionability_score`)
+- Score explanation updated: "Blue collar fit" label shown when `is_blue_collar = true`
+
+---
+
+**Test focus:**
+- New/changed: `is_blue_collar` classification unit tests for all new category mappings; backfill correctness on known fixture rows
+- New/changed: `owner_name` extraction unit tests — JSON-LD Person, OSM operator tag, website heuristics; write-rule precedence (manual never overwritten)
+- New/changed: sort param unit tests — all 9 `sort_by` values; unknown value → 422
+- New/changed: filter param unit tests — all new params; invalid enum → 422; combined filters (AND logic)
+- New/changed: grouping response schema tests — all 7 `group_by` modes; empty group omission; flat fallback
+- New/changed: Today view section tests — Blue Collar Today section, Has Owner Name section, empty section hiding
+- New/changed: export column tests — new columns present, confidence as percentage, group-by CSV separator rows
+- Existing regression checks: existing `insurance_class` sort and filter behavior unchanged; scoring v1/v2 rank order not materially changed by +5 blue-collar bonus (verify top-20 overlap ≥ 85% vs pre-bonus on test routes)
+
+---
+
+**Exit criteria:**
+- `is_blue_collar` is set correctly on ≥ 95% of Auto Service, Contractor / Trades, and Personal Services businesses in a test ingestion run (verified by spot-check query)
+- New blue-collar category mappings cover all listed business types (verified against test fixture with known categories)
+- `owner_name` populated for ≥ 20% of saved leads after one enrichment + validation pass on a staging dataset of ≥ 50 saved leads with websites
+- Manual `owner_name` entry round-trips correctly and is never overwritten by automated extraction
+- All 9 sort modes return correctly ordered results on a real dataset (verified by manual inspection of 3 test routes)
+- All new filter params work correctly in combination on a real dataset
+- Grouping response schema is valid for all 7 modes; empty groups are absent from response
+- Today view shows Blue Collar Today and Has Owner Name sections when qualifying leads exist; both are absent when they do not
+- Export columns are present and correctly populated; grouped export has separator rows in correct positions
+- +5 blue-collar bonus does not change top-20 rank order by more than 15% on the 5 Phase 3 validation routes (regression guardrail)
+- All new tests pass; existing suite remains green (105+ passing)
+
+**Blocking dependencies:** Phase 9 complete or in sustained pilot with stable data; Phase 5 validation system active (owner name extraction depends on the website fetch infrastructure)
 
 ---
 
@@ -593,6 +834,7 @@ The phases above are ordered for a single developer. If capacity allows parallel
 | C — Validation System | Phase 5 | Phase 2 P0 done + Phase 3 done |
 | D — Data Quality | Phase 6 | Phase 2 done (schema can start alongside Phase 5) |
 | E — Ops Hardening | Phase 7 | Phase 2 done (some items can run with Phase 2 P1) |
+| F — Lead Intelligence | Phase 10 | Phase 9 complete (or parallel with Phase 9 post-baseline) |
 
 Phase 2 (Security) is the only phase with true blocking effect on everything downstream. Prioritize closing P0 items first.
 
@@ -626,6 +868,7 @@ MVP is complete when all are true:
 | 7 | Operations hardening | In progress — code complete; platform setup remaining | Low |
 | 8 | MVP verification and QA | Not started | Low |
 | 9 | Pilot and launch | Not started | Low |
+| 10 | Lead intelligence — sorting, grouping, blue-collar, owner contact | Not started | Low |
 
 ---
 
