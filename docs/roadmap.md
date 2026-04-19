@@ -1,6 +1,6 @@
 # RepRoute Master Roadmap
 
-Updated: April 19, 2026 (Phase 4 error handling + Phase 7 upstream resilience + audit latency — commit 65f9ab5)
+Updated: April 19, 2026 (All roadmap code tasks complete — commit d180f8a)
 
 ## Purpose
 
@@ -82,7 +82,7 @@ RepRoute is a route-aware field sales prospecting platform for B2B reps. Insuran
 - Security scanner remediation is complete in-repo (`starlette` pin, CI pip upgrade, gitleaks false-positive allowlist); CI-linked confirmation URL remains open in this session
 - Backend security test coverage and staging negative-path runtime evidence are current; authenticated staging success-path evidence and CI-linked run URLs remain open
 - Phase 5 evidence sign-off still open (10+ sample runs with correct outcomes required before gate can close)
-- Phase 6 OSM enrichment deployed; Overpass public endpoint timing out on Render — set OVERPASS_TIMEOUT_SECONDS and OVERPASS_ENDPOINT env vars to tune; evidence sign-off pending once enrichment hits confirm
+- Phase 6 OSM enrichment deployed; Overpass retry logic in place (2 attempts, 1s delay, graceful None fallback); Render env vars `OVERPASS_TIMEOUT_SECONDS` and `OVERPASS_ENDPOINT` documented in DEPLOYMENT_GUIDE and REQUIRED_SECRETS; evidence sign-off pending once enrichment hits confirm in staging
 - Scoring calibration evidence is incomplete (5-route evidence + `Other/Unknown` threshold sign-off) (see Phase 3)
 - Scoring v2 shadow evidence/cutover gate is open (top-20 save/contacted uplift + latency guardrails not yet evidenced) (see Phase 3)
 - Evidence capture for ingestion QA and scoring validation is incomplete (see Phase 1)
@@ -95,6 +95,11 @@ RepRoute is a route-aware field sales prospecting platform for B2B reps. Insuran
 - Phase 7 Photon geocode resilience complete: `geocode_service.py` retries up to 2 attempts with 0.5s delay; same error taxonomy; on exhaustion returns POC fallback with `degraded=True`
 - Phase 7 audit latency tracking complete: `duration_ms` (time.monotonic) included in every `audit_event` log line in `main.py`; enables Logtail p95 alert rules
 - 18 new unit tests for upstream resilience (all paths: retry success, retry exhaustion → degraded, cache hit, 4xx terminal, degraded flag propagation); 94 backend tests total passing
+- Phase 6 Overpass retry complete: `osm_enrichment_service.py` retries up to 2 attempts with 1s delay on transient errors; 4xx terminal; exhaustion returns None gracefully — enrichment never raises, always records attempted timestamp
+- 11 new Overpass resilience tests added; 105 backend tests total passing
+- Phase 0 baseline docs complete: `backend/.env.example`, `frontend/.env.example`, root `.env.example` with all env vars through Phase 7; `README.md` updated with accurate setup steps and runbook reference
+- Phase 8 prerequisite complete: `docs/RUNBOOK.md` (266 lines) covering ingestion trigger, all quota/outage scenarios (ORS/Photon/Overpass/Clerk/validation), DB migration recovery, Redis down, CF Worker troubleshooting, Render + CF Pages rollback, support contacts, pilot P0-P3 SLA
+- `docs/REQUIRED_SECRETS.md` and `docs/DEPLOYMENT_GUIDE.md` updated with OVERPASS_* and ENRICHMENT_* env vars
 
 ---
 
@@ -113,16 +118,16 @@ RepRoute is a route-aware field sales prospecting platform for B2B reps. Insuran
 
 ### Phase 0 — Baseline Freeze and Build Reliability
 
-**Status: In progress**
+**Status: Code complete — clean-machine walkthrough verification remaining**
 
 **Scope:**
 Lock current architecture, environments, and dev workflow. Ensure any developer can set up and run the system from scratch without tribal knowledge.
 
 **Deliverables:**
-- Repository structure and owner docs current (`README`, `DEPLOYMENT_GUIDE`, `REQUIRED_SECRETS`)
+- Repository structure and owner docs current (`README`, `DEPLOYMENT_GUIDE`, `REQUIRED_SECRETS`) ✅ (complete — all updated with Phase 7 env vars, runbook reference, and accurate setup steps)
 - Clean-machine setup validation: backend, frontend, and database smoke flow
 - CI path covering: backend lint/compile, frontend build, basic smoke checks
-- Rollback instructions documented for Render and Cloudflare Pages deploys
+- Rollback instructions documented for Render and Cloudflare Pages deploys ✅ (complete — see `docs/RUNBOOK.md` §4, §8)
 
 **Test focus:**
 - New/changed: clean-machine bootstrap from docs only (backend start, frontend start, DB connectivity, migrations)
@@ -400,7 +405,7 @@ Labels: 80–100 = Validated; 60–79 = Mostly valid; 40–59 = Needs review; 0�
 
 ### Phase 6 — Dataset Expansion
 
-**Status: In progress — OSM selective enrichment implemented and deployed; verification/tuning pending**
+**Status: In progress — OSM enrichment + Overpass retry complete; staging verification pending**
 
 **Scope:**
 Improve contact field completeness without cost blowout, using selective OSM enrichment on top of the existing Overture monthly refresh. Per `docs/datasetexpansion.md`.
@@ -426,7 +431,7 @@ ALTER TABLE business
 - Do not hard-delete; mark for downstream validation review
 
 **Selective OSM enrichment:**
-- Overpass fetch utility: point lookup by lat/lng/name, 50m radius, extract `phone`/`contact:phone`, `website`/`contact:website`, `opening_hours`
+- Overpass fetch utility: point lookup by lat/lng/name, 50m radius, extract `phone`/`contact:phone`, `website`/`contact:website`, `opening_hours` ✅ (complete — retry + graceful fallback added, 11 unit tests passing)
 - Do not run against Overpass public endpoint above ~500 queries/day; use local Docker instance if volume approaches that
 - Enrichment trigger: new lead save + route generation (async, non-blocking)
 - Column-level merge only: write to `osm_phone`/`osm_website`; copy to primary `phone`/`website` only when primary is null
@@ -511,7 +516,7 @@ Verify all MVP acceptance criteria from `mvpoutline.md` §14 are met before decl
 - Offline reliability verified: airplane mode → changes → reconnect → second device confirms sync
 - No silent failures verified: force-fail API → confirm all error states surface correctly
 - PWA install flow verified on iOS and Android (install prompt after first route, iOS banner)
-- Operational runbook committed: ingestion trigger, quota exhaustion (ORS, Photon, Clerk), backend outage, validation cap reached
+- Operational runbook committed: ingestion trigger, quota exhaustion (ORS, Photon, Clerk), backend outage, validation cap reached ✅ (complete — `docs/RUNBOOK.md`)
 
 **Test focus:**
 - New/changed comprehensive QA: Today view, follow-up dates, validation badges/evidence drawer, cross-route export, onboarding, install flow
@@ -611,13 +616,13 @@ MVP is complete when all are true:
 
 | Phase | Name | Status | Confidence |
 |---|---|---|---|
-| 0 | Baseline reliability | In progress | Medium |
+| 0 | Baseline reliability | Code complete — walkthrough verification remaining | Medium |
 | 1 | Data/routing foundation evidence | Mostly done | Medium |
 | 2 | Security lockdown | In progress (verification run captured; scanner/runtime deltas remain) | Medium |
 | 3 | Scoring + score explanation | In progress (v2 shadow + quality pass landed; evidence incomplete) | Medium |
 | 4 | Discovery UX + workflow completion | In progress — code complete; evidence sign-off remaining | Medium |
 | 5 | Lead validation system | Feature complete — evidence sign-off remaining | High |
-| 6 | Dataset expansion | In progress — OSM enrichment deployed, Overpass tuning needed | Medium |
+| 6 | Dataset expansion | In progress — Overpass retry complete; staging evidence pending | Medium |
 | 7 | Operations hardening | In progress — code complete; platform setup remaining | Low |
 | 8 | MVP verification and QA | Not started | Low |
 | 9 | Pilot and launch | Not started | Low |
@@ -642,7 +647,7 @@ MVP is complete when all are true:
    - Replace EXPLAIN placeholder (`docs/evidence/phase1_explain_route_pending_2026-04-17.txt`) with a live trace
    - Run ingestion QA script and commit metrics artifact
    - Run `validate_scoring.py` on 5 routes; commit `other_unknown_rate`
-5. **Tune Phase 6 Overpass connectivity** — set `OVERPASS_TIMEOUT_SECONDS=15` and try `overpass.kumi.systems` via Render env vars; confirm `osm_*` columns populate in Supabase.
+5. **Verify Phase 6 Overpass enrichment in staging** — set `OVERPASS_TIMEOUT_SECONDS=10` (and `OVERPASS_ENDPOINT=https://overpass.kumi.systems/api/interpreter` if the primary still times out) in Render env vars; save a lead and confirm `osm_phone` or `osm_website` populates in Supabase within 30s.
 6. **Use gate closeout workflow for each merge/deploy** — attach `docs/GATE_CLOSEOUT_TEMPLATE.md` entries with rollback notes and artifact links before marking any gate complete.
 
 ---
