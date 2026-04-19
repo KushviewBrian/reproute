@@ -34,6 +34,7 @@ def main() -> None:
           SELECT
             ls.route_id,
             ls.business_id,
+            COALESCE(NULLIF(lower(trim(b.state)), ''), 'unknown') AS geo_key,
             b.insurance_class,
             COALESCE(b.has_phone, false) AS has_phone,
             COALESCE(b.has_website, false) AS has_website,
@@ -68,6 +69,7 @@ def main() -> None:
         ),
         grouped AS (
           SELECT
+            geo_key,
             insurance_class,
             has_phone,
             has_website,
@@ -78,10 +80,26 @@ def main() -> None:
             (SUM(was_saved)::numeric / NULLIF(COUNT(*), 0))::numeric(6,5) AS prior_save,
             (SUM(was_contacted)::numeric / NULLIF(COUNT(*), 0))::numeric(6,5) AS prior_contact
           FROM base
-          GROUP BY insurance_class, has_phone, has_website, distance_band
+          GROUP BY geo_key, insurance_class, has_phone, has_website, distance_band
         ),
-        global_row AS (
+        geo_global_rows AS (
           SELECT
+            geo_key,
+            NULL::text AS insurance_class,
+            NULL::boolean AS has_phone,
+            NULL::boolean AS has_website,
+            'global'::text AS distance_band,
+            COUNT(*)::int AS sample_size,
+            SUM(was_saved)::int AS save_count,
+            SUM(was_contacted)::int AS contacted_count,
+            (SUM(was_saved)::numeric / NULLIF(COUNT(*), 0))::numeric(6,5) AS prior_save,
+            (SUM(was_contacted)::numeric / NULLIF(COUNT(*), 0))::numeric(6,5) AS prior_contact
+          FROM base
+          GROUP BY geo_key
+        ),
+        all_global_row AS (
+          SELECT
+            'global'::text AS geo_key,
             NULL::text AS insurance_class,
             NULL::boolean AS has_phone,
             NULL::boolean AS has_website,
@@ -95,7 +113,9 @@ def main() -> None:
         )
         SELECT * FROM grouped
         UNION ALL
-        SELECT * FROM global_row
+        SELECT * FROM geo_global_rows
+        UNION ALL
+        SELECT * FROM all_global_row
         """
     )
 
@@ -104,6 +124,7 @@ def main() -> None:
         INSERT INTO scoring_feedback_prior (
           id,
           calibration_version,
+          geo_key,
           insurance_class,
           has_phone,
           has_website,
@@ -116,6 +137,7 @@ def main() -> None:
         ) VALUES (
           :id,
           :calibration_version,
+          :geo_key,
           :insurance_class,
           :has_phone,
           :has_website,
@@ -145,6 +167,7 @@ def main() -> None:
                 {
                     "id": str(uuid.uuid4()),
                     "calibration_version": args.calibration_version,
+                    "geo_key": row["geo_key"],
                     "insurance_class": row["insurance_class"],
                     "has_phone": row["has_phone"],
                     "has_website": row["has_website"],
@@ -159,11 +182,12 @@ def main() -> None:
             ],
         )
 
-    global_row = next((row for row in rows if row["distance_band"] == "global"), None)
+    global_row = next((row for row in rows if row["distance_band"] == "global" and row["geo_key"] == "global"), None)
     summary = {
         "calibration_version": args.calibration_version,
         "lookback_days": args.lookback_days,
-        "segments_written": len(rows) - (1 if global_row else 0),
+        "segments_written": len([row for row in rows if row["distance_band"] != "global"]),
+        "geo_global_rows": len([row for row in rows if row["distance_band"] == "global" and row["geo_key"] != "global"]),
         "global": {
             "sample_size": int(global_row["sample_size"] or 0) if global_row else 0,
             "prior_save": float(global_row["prior_save"] or 0.0) if global_row else 0.0,

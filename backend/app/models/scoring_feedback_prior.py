@@ -12,6 +12,7 @@ class ScoringFeedbackPrior(Base):
     __table_args__ = (
         UniqueConstraint(
             "calibration_version",
+            "geo_key",
             "insurance_class",
             "has_phone",
             "has_website",
@@ -19,10 +20,12 @@ class ScoringFeedbackPrior(Base):
             name="uq_scoring_feedback_prior_segment",
         ),
         Index("idx_scoring_feedback_prior_version", "calibration_version"),
+        Index("idx_scoring_feedback_prior_geo_version", "geo_key", "calibration_version"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     calibration_version: Mapped[str] = mapped_column(String, nullable=False)
+    geo_key: Mapped[str] = mapped_column(String, nullable=False, default="global")
     insurance_class: Mapped[str | None] = mapped_column(String)
     has_phone: Mapped[bool | None] = mapped_column(Boolean)
     has_website: Mapped[bool | None] = mapped_column(Boolean)

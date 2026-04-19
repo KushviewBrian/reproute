@@ -14,6 +14,7 @@ CANDIDATE_QUERY = text(
       b.insurance_class,
       b.address_line1,
       b.city,
+      b.state,
       b.phone,
       b.website,
       b.confidence_score,
@@ -23,6 +24,8 @@ CANDIDATE_QUERY = text(
       b.has_address,
       lv.validation_confidence,
       lv.validation_last_checked_at,
+      lv.invalid_field_count,
+      lv.hard_failure_count,
       ST_Y(b.geom::geometry) AS lat,
       ST_X(b.geom::geometry) AS lng,
       ST_Distance(b.geom::geography, r.route_geom::geography) AS distance_from_route_m
@@ -31,7 +34,9 @@ CANDIDATE_QUERY = text(
       SELECT
         business_id,
         AVG(confidence) AS validation_confidence,
-        MAX(last_checked_at) AS validation_last_checked_at
+        MAX(last_checked_at) AS validation_last_checked_at,
+        SUM(CASE WHEN state = 'invalid' THEN 1 ELSE 0 END) AS invalid_field_count,
+        SUM(CASE WHEN failure_class IN ('dns', 'http_error', 'tls_error') THEN 1 ELSE 0 END) AS hard_failure_count
       FROM lead_field_validation
       GROUP BY business_id
     ) lv ON lv.business_id = b.id
