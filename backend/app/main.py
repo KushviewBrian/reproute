@@ -62,6 +62,11 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(title="Reproute API", version="0.1.0", lifespan=lifespan)
 
+
+async def startup() -> None:
+    # Backward-compatible startup hook used by tests/imports.
+    _validate_startup_config()
+
 # CORS configuration - origins read from config/env var CORS_ALLOW_ORIGINS (comma-separated)
 _settings = get_settings()
 cors_origins = [o.strip() for o in _settings.cors_allow_origins.split(",") if o.strip()]
