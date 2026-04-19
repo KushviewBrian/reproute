@@ -14,6 +14,8 @@ services:
         sync: false
       - key: CLERK_JWKS_URL
         sync: false
+      - key: VALIDATION_HMAC_SECRET
+        sync: false
       - key: SECRET_KEY
         generateValue: true
       - key: ENVIRONMENT

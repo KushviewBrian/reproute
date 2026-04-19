@@ -140,13 +140,13 @@ GEOCODE_WORKER_URL=https://reproute-geocode.your-subdomain.workers.dev
    - **Region**: Choose closest to your backend (e.g., US East)
    - **Type**: Pay as you go (free tier available)
 4. Click **Create**
-5. In the database dashboard, scroll to **REST API** section
-6. Copy the **UPSTASH_REDIS_REST_URL**
+5. In the database dashboard, open the **Redis** connection details
+6. Copy the Redis connection URL (`rediss://...` recommended for production)
 
 ### Environment Variables to Set:
 ```bash
 # Backend (.env)
-REDIS_URL=https://your-redis-url.upstash.io
+REDIS_URL=rediss://default:<password>@<host>:<port>
 ```
 
 ---
@@ -179,7 +179,7 @@ DATABASE_TLS_VERIFY=true
 DATABASE_SSL_CA_PEM=<full-pem-chain>
 DATABASE_TLS_EMERGENCY_INSECURE_OVERRIDE=false
 DATABASE_TLS_EMERGENCY_OVERRIDE_SUNSET=2026-06-30
-REDIS_URL=<your-upstash-redis-url>
+REDIS_URL=rediss://default:<password>@<host>:<port>
 SECRET_KEY=<generate-a-long-random-string>
 CORS_ALLOW_ORIGINS=https://your-frontend-domain.com
 GEOCODE_WORKER_URL=https://reproute-geocode.your-subdomain.workers.dev
@@ -260,7 +260,7 @@ CORS_ALLOW_ORIGINS=https://your-frontend-domain.vercel.app,https://reproute-fron
 |---------|---------|-------------|
 | **Clerk** | Authentication | `https://your-app.clerk.accounts.dev` |
 | **Cloudflare Worker** | Geocoding cache | `https://reproute-geocode.*.workers.dev` |
-| **Upstash Redis** | Application cache | `https://*.upstash.io` |
+| **Upstash Redis** | Application cache | `redis://*` / `rediss://*` |
 | **Render Backend** | API server | `https://reproute-backend.onrender.com` |
 | **Vercel/Render Frontend** | Web app | `https://reproute.vercel.app` |
 
@@ -289,7 +289,7 @@ CORS_ALLOW_ORIGINS=https://your-frontend-domain.vercel.app,https://reproute-fron
 - Check KV namespace is properly bound in wrangler.toml
 
 ### "Redis connection error":
-- Verify `REDIS_URL` format (should be REST URL from Upstash)
+- Verify `REDIS_URL` format (must be Redis protocol URL, `redis://` or `rediss://`)
 - App should degrade gracefully if Redis is unavailable
 - Check Upstash dashboard for connection limits
 

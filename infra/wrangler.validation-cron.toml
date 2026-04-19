@@ -14,5 +14,5 @@ BACKEND_URL = "https://reproute-backend.onrender.com"
 [env.staging]
 name = "reproute-validation-cron-staging"
 
-[triggers]
+[env.staging.triggers]
 crons = ["0 */6 * * *"]

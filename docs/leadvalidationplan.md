@@ -568,7 +568,7 @@ Admin/power-user queue showing:
 - Respect `robots.txt` using `urllib.robotparser` or `protego`; cache parsed robots for 24h
 - Default crawl-delay: 2s between requests to the same domain; honor `Crawl-delay` directive if present
 - Track `user_id` on all manually triggered runs for auditability
-- Admin `run-due` endpoint auth: Cloudflare Worker generates a **short-lived HMAC token** (HMAC-SHA256 of `timestamp + secret`, valid for 60s) sent as `X-Admin-Token`. Render verifies the HMAC and rejects tokens older than 60s. The shared secret (`VALIDATION_ADMIN_SECRET`) is stored in CF Worker secrets and Render env vars — never in code. This avoids the static-secret-forever problem without requiring a full OIDC setup.
+- Admin `run-due` endpoint auth: Cloudflare Worker generates a **short-lived HMAC token** (HMAC-SHA256 of `timestamp + secret`, valid for 60s) sent as `X-Admin-Token`. Render verifies the HMAC and rejects tokens older than 60s. The shared secret (`VALIDATION_HMAC_SECRET`) is stored in CF Worker secrets and Render env vars — never in code. This avoids the static-secret-forever problem without requiring a full OIDC setup.
 - Expansion candidates undergo same sanitization before storage
 
 ---
@@ -596,7 +596,7 @@ Admin/power-user queue showing:
 - [ ] Add env vars for all config values (§20)
 - [ ] Cloudflare Worker: cron trigger + HMAC token generation
 - [ ] Workers KV namespace for rate counters
-- [ ] CF Worker secret: `VALIDATION_ADMIN_SECRET` + `RENDER_ADMIN_URL`
+- [ ] CF Worker secret: `VALIDATION_HMAC_SECRET` + `RENDER_ADMIN_URL`
 
 ### Backend — Phase 1
 - [ ] Fetch layer with failure taxonomy classification (§7)
@@ -653,7 +653,7 @@ Admin/power-user queue showing:
 | `VALIDATION_RECHECK_DAYS_ADDRESS` | `30` | Freshness cadence: address |
 | `VALIDATION_EVIDENCE_MAX_BYTES` | `8192` | Max evidence payload before truncation |
 | `VALIDATION_CANDIDATE_EXPIRE_DAYS` | `90` | Auto-expire `new` expansion candidates |
-| `VALIDATION_ADMIN_SECRET` | — | Shared HMAC secret for `run-due` endpoint (set in both CF Worker secrets and Render env) |
+| `VALIDATION_HMAC_SECRET` | — | Shared HMAC secret for `run-due` endpoint (set in both CF Worker secrets and Render env) |
 | `VALIDATION_ADMIN_TOKEN_TTL_SECONDS` | `60` | Max age of HMAC token before rejection |
 | `VALIDATION_RUN_RETENTION_DAYS` | `30` | How long to keep `lead_validation_run` rows |
 | `RENDER_ADMIN_URL` | — | Full URL of Render backend (set in CF Worker secrets only) |

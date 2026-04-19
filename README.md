@@ -12,9 +12,10 @@ Route-aware prospecting PWA for field insurance agents.
 
 ## Quickstart
 
-1. Copy env template:
+1. Copy env templates:
    ```bash
-   cp .env.example .env
+   cp backend/.env.example backend/.env
+   cp frontend/.env.example frontend/.env
    ```
 2. Start local dependencies:
    ```bash
