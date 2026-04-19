@@ -615,7 +615,7 @@ The existing `insurance_class` values already capture the right atoms. Blue-coll
 - Export: add `is_blue_collar` column to both per-route and cross-route CSV exports
 - `classification_service.py` extension: add additional category mappings that clearly belong in blue-collar but currently fall to Other Commercial — specifically: auto detailing, auto glass, towing, welding/fabrication, pest control, landscaping/lawn care, pressure washing, painting contractor, cleaning services, locksmith
 
-**Migration:** `0006_blue_collar_and_owner_contact.py`
+**Migration:** `0008_blue_collar_and_owner_contact.py`
 ```sql
 ALTER TABLE business
   ADD COLUMN is_blue_collar BOOLEAN NOT NULL DEFAULT FALSE,
@@ -780,7 +780,7 @@ Both the per-route CSV (`GET /export/routes/{id}/leads.csv`) and cross-route CSV
 
 ---
 
-**Database migrations required (0006):**
+**Database migrations required (0008):**
 - `business.is_blue_collar` BOOLEAN NOT NULL DEFAULT FALSE + index
 - `business.owner_name` TEXT nullable
 - `business.owner_name_source` TEXT nullable
