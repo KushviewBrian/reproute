@@ -94,6 +94,7 @@ export function App({ token, refreshToken }: AppProps) {
   const [minScore, setMinScore] = useState(40);
   const [hasPhone, setHasPhone] = useState<boolean | undefined>(undefined);
   const [hasWebsite, setHasWebsite] = useState<boolean | undefined>(undefined);
+  const [hasOwnerName, setHasOwnerName] = useState<boolean | undefined>(undefined);
   const [insuranceClass, setInsuranceClass] = useState<string>("");
   const [sortBy, setSortBy] = useState<"score" | "business_type">("score");
   const [corridor, setCorridor] = useState(1609);
@@ -175,6 +176,7 @@ export function App({ token, refreshToken }: AppProps) {
           minScore,
           hasPhone,
           hasWebsite,
+          hasOwnerName,
           insuranceClass: insuranceClass ? [insuranceClass] : undefined,
           limit: 100,
           scoreVersion: "v2",
@@ -212,7 +214,7 @@ export function App({ token, refreshToken }: AppProps) {
         throw err;
       }
     },
-    [token, minScore, hasPhone, hasWebsite, insuranceClass, sortBy, blueCollar],
+    [token, minScore, hasPhone, hasWebsite, hasOwnerName, insuranceClass, sortBy, blueCollar],
   );
 
   async function onCreated(created: { routeId: string; routeGeoJson: GeoJSON.LineString }) {
@@ -411,6 +413,12 @@ export function App({ token, refreshToken }: AppProps) {
                       onClick={() => { setHasWebsite(hasWebsite ? undefined : true); }}
                     >
                       Website
+                    </button>
+                    <button
+                      className={`toggle-chip${hasOwnerName ? " active" : ""}`}
+                      onClick={() => { setHasOwnerName(hasOwnerName ? undefined : true); }}
+                    >
+                      Owner known
                     </button>
                   </div>
                 </div>
