@@ -90,6 +90,11 @@ export type Lead = {
   rank_reason_v2?: string[] | null;
   lat?: number | null;
   lng?: number | null;
+  // Phase 10
+  is_blue_collar: boolean;
+  owner_name: string | null;
+  owner_name_source: string | null;
+  owner_name_confidence: number | null;
 };
 
 export type SavedLead = {
@@ -109,6 +114,13 @@ export type SavedLead = {
   final_score?: number | null;
   latest_note_text?: string | null;
   latest_note_created_at?: string | null;
+  // Phase 10
+  is_blue_collar: boolean;
+  owner_name: string | null;
+  owner_name_source: string | null;
+  owner_name_confidence: number | null;
+  insurance_class: string | null;
+  operating_status: string | null;
 };
 
 export type SavedLeadsTodayResponse = {
@@ -120,6 +132,9 @@ export type SavedLeadsTodayResponse = {
     label: string;
     unsaved_lead_count: number;
   } | null;
+  // Phase 10
+  blue_collar_today: SavedLead[];
+  has_owner_name: SavedLead[];
 };
 
 export type Note = {
@@ -153,6 +168,12 @@ export async function fetchLeads(
     insuranceClass?: string[];
     limit?: number;
     scoreVersion?: "v1" | "v2";
+    // Phase 10
+    sortBy?: "score" | "blue_collar_score" | "name" | "distance";
+    sortDir?: "asc" | "desc";
+    blueCollar?: boolean;
+    hasOwnerName?: boolean;
+    scoreBand?: "high" | "medium" | "low";
   },
 ) {
   const params = new URLSearchParams();
@@ -162,6 +183,11 @@ export async function fetchLeads(
   if (opts?.hasWebsite !== undefined) params.set("has_website", String(opts.hasWebsite));
   if (opts?.scoreVersion) params.set("score_version", opts.scoreVersion);
   (opts?.insuranceClass ?? []).forEach((c) => params.append("insurance_class", c));
+  if (opts?.sortBy) params.set("sort_by", opts.sortBy);
+  if (opts?.sortDir) params.set("sort_dir", opts.sortDir);
+  if (opts?.blueCollar !== undefined) params.set("blue_collar", String(opts.blueCollar));
+  if (opts?.hasOwnerName !== undefined) params.set("has_owner_name", String(opts.hasOwnerName));
+  if (opts?.scoreBand) params.set("score_band", opts.scoreBand);
 
   return req<{ route_id: string; leads: Lead[]; total: number; filtered: number }>(
     `/routes/${routeId}/leads?${params.toString()}`,
@@ -204,7 +230,7 @@ export async function saveLead(payload: { business_id: string; route_id?: string
 
 export async function updateSavedLead(
   id: string,
-  payload: { status?: string; priority?: number; next_follow_up_at?: string | null; last_contact_attempt_at?: string | null },
+  payload: { status?: string; priority?: number; next_follow_up_at?: string | null; last_contact_attempt_at?: string | null; owner_name?: string | null },
   token?: string,
 ) {
   return req<SavedLead>(`/saved-leads/${id}`, { method: "PATCH", body: JSON.stringify(payload) }, token);
@@ -299,6 +325,18 @@ export async function pinValidationField(businessId: string, fieldName: string, 
     { method: "PATCH", body: JSON.stringify({ pinned }) },
     token,
   );
+}
+
+export async function downloadSavedLeadsCsvGrouped(groupBy: string, token?: string): Promise<void> {
+  const headers: Record<string, string> = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const resp = await fetch(`${API_BASE}/export/saved-leads.csv?group_by=${encodeURIComponent(groupBy)}`, { headers });
+  if (!resp.ok) { const body = await resp.text(); throw new Error(`${resp.status}: ${body}`); }
+  const blob = await resp.blob();
+  const href = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = href; a.download = `saved_leads_by_${groupBy}.csv`; a.click();
+  URL.revokeObjectURL(href);
 }
 
 export async function downloadSavedLeadsCsv(token?: string): Promise<void> {

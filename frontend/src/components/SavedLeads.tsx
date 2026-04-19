@@ -4,6 +4,7 @@ import {
   deleteSavedLead,
   downloadRouteCsv,
   downloadSavedLeadsCsv,
+  downloadSavedLeadsCsvGrouped,
   getValidationState,
   listNotes,
   listSavedLeads,
@@ -91,6 +92,8 @@ export function SavedLeads({ token, currentRouteId, onAddToRoute, onCountChange,
   const [cacheMeta, setCacheMeta] = useState<string | null>(null);
   const [queueCount, setQueueCount] = useState(() => getQueuedCount());
   const [validationStates, setValidationStates] = useState<Record<string, ValidationStateResponse>>({});
+  const [blueCollarOnly, setBlueCollarOnly] = useState(false);
+  const [exportingGrouped, setExportingGrouped] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -99,14 +102,15 @@ export function SavedLeads({ token, currentRouteId, onAddToRoute, onCountChange,
       try {
         const base = await listSavedLeads(token, status || undefined);
         if (!token) {
-          if (!cancelled) setItems(base);
+          if (!cancelled) setItems(blueCollarOnly ? base.filter((b) => b.is_blue_collar) : base);
           return;
         }
 
         // Fallback for environments where /saved-leads note preview fields are not populated yet:
         // hydrate missing preview from /notes per business.
+        const base_filtered = blueCollarOnly ? base.filter((b) => b.is_blue_collar) : base;
         const hydrated = await Promise.all(
-          base.map(async (item) => {
+          base_filtered.map(async (item) => {
             if (item.latest_note_text) return item;
             try {
               const notes = await listNotes(item.business_id, token);
@@ -163,7 +167,7 @@ export function SavedLeads({ token, currentRouteId, onAddToRoute, onCountChange,
     return () => {
       cancelled = true;
     };
-  }, [token, status]);
+  }, [token, status, blueCollarOnly]);
 
   useEffect(() => {
     function refreshQueuedCount() {
@@ -209,6 +213,15 @@ export function SavedLeads({ token, currentRouteId, onAddToRoute, onCountChange,
     }
   }
 
+  async function handleExportGrouped() {
+    setExportingGrouped(true);
+    try {
+      await downloadSavedLeadsCsvGrouped("insurance_class", token);
+    } finally {
+      setExportingGrouped(false);
+    }
+  }
+
   async function handleFollowUpChange(id: string, value: string) {
     const iso = value ? `${value}T12:00:00Z` : null;
     const item = items.find((it) => it.id === id);
@@ -242,36 +255,47 @@ export function SavedLeads({ token, currentRouteId, onAddToRoute, onCountChange,
       <div className="saved-header">
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <h2>Saved Leads</h2>
-          <div style={{ display: "flex", gap: "0.35rem" }}>
+          <div style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap", justifyContent: "flex-end" }}>
             <button className="btn btn-ghost btn-sm" onClick={handleExportAll} disabled={exportingAll}>
               <IconDownload />
-              {exportingAll ? "Exporting..." : "Export All CSV"}
+              {exportingAll ? "Exporting..." : "Export CSV"}
+            </button>
+            <button className="btn btn-ghost btn-sm" onClick={handleExportGrouped} disabled={exportingGrouped}>
+              <IconDownload />
+              {exportingGrouped ? "Exporting..." : "By Type CSV"}
             </button>
             {currentRouteId && (
-              <button
-                className="btn btn-ghost btn-sm"
-                onClick={handleExport}
-                disabled={exporting}
-              >
+              <button className="btn btn-ghost btn-sm" onClick={handleExport} disabled={exporting}>
                 <IconDownload />
-                {exporting ? "Exporting..." : "Export Route CSV"}
+                {exporting ? "Exporting..." : "Route CSV"}
               </button>
             )}
           </div>
         </div>
 
-        <select
-          className="form-select"
-          value={status}
-          onChange={(e) => setStatus(e.target.value)}
-        >
-          <option value="">All statuses</option>
-          <option value="saved">Saved</option>
-          <option value="visited">Visited</option>
-          <option value="called">Called</option>
-          <option value="follow_up">Follow Up</option>
-          <option value="not_interested">Not Interested</option>
-        </select>
+        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginTop: "0.4rem", flexWrap: "wrap" }}>
+          <select
+            className="form-select"
+            style={{ flex: 1 }}
+            value={status}
+            onChange={(e) => setStatus(e.target.value)}
+          >
+            <option value="">All statuses</option>
+            <option value="saved">Saved</option>
+            <option value="visited">Visited</option>
+            <option value="called">Called</option>
+            <option value="follow_up">Follow Up</option>
+            <option value="not_interested">Not Interested</option>
+          </select>
+          <button
+            className={"toggle-chip" + (blueCollarOnly ? " active" : "")}
+            style={{ whiteSpace: "nowrap" }}
+            onClick={() => setBlueCollarOnly((v) => !v)}
+            title="Show only blue-collar businesses"
+          >
+            🔧 Blue collar
+          </button>
+        </div>
         {cacheMeta && (
           <p style={{ fontSize: "0.7rem", color: "var(--gray-400)", marginTop: "0.35rem" }}>{cacheMeta}</p>
         )}
@@ -287,7 +311,7 @@ export function SavedLeads({ token, currentRouteId, onAddToRoute, onCountChange,
           <IconBookmark />
           <p className="empty-state-title">No saved leads</p>
           <p className="empty-state-body">
-            {status ? `No leads with status "${STATUS_LABELS[status] ?? status}".` : "Save prospects from the Route tab to see them here."}
+            {blueCollarOnly ? "No blue-collar leads saved." : status ? `No leads with status "${STATUS_LABELS[status] ?? status}".` : "Save prospects from the Route tab to see them here."}
           </p>
         </div>
       ) : (
@@ -302,10 +326,25 @@ export function SavedLeads({ token, currentRouteId, onAddToRoute, onCountChange,
                 >
                   {it.business_name ?? it.business_id.slice(0, 8) + "…"}
                 </button>
-                <span className={`status-pill status-${it.status}`}>
-                  {STATUS_LABELS[it.status] ?? it.status}
-                </span>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.3rem" }}>
+                  {it.is_blue_collar && (
+                    <span style={{ fontSize: "0.62rem", background: "#eff6ff", color: "#1d4ed8", border: "1px solid #bfdbfe", borderRadius: "6px", padding: "0.1rem 0.35rem" }}>🔧</span>
+                  )}
+                  <span className={`status-pill status-${it.status}`}>
+                    {STATUS_LABELS[it.status] ?? it.status}
+                  </span>
+                </div>
               </div>
+              {it.owner_name && (
+                <p style={{ fontSize: "0.7rem", color: "var(--gray-600)", margin: "0.1rem 0 0" }}>
+                  Owner: <strong>{it.owner_name}</strong>
+                  {it.owner_name_confidence != null && (
+                    <span style={{ marginLeft: "0.3rem", fontSize: "0.63rem", color: "var(--gray-400)" }}>
+                      {Math.round(it.owner_name_confidence * 100)}%
+                    </span>
+                  )}
+                </p>
+              )}
               {it.address && (
                 <p style={{ fontSize: "0.7rem", color: "var(--gray-500)", margin: "0.1rem 0 0" }}>{it.address}</p>
               )}

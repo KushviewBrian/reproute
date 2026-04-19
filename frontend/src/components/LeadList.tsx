@@ -148,6 +148,9 @@ export function LeadList({ leads, selectedLead, onSave, onSaveWithNote, onSelect
 
             <div className="lead-meta-row">
               <span className="ins-class-tag">{lead.insurance_class ?? "Unknown"}</span>
+              {lead.is_blue_collar && (
+                <span className="ins-class-tag" style={{ background: "var(--blue-50, #eff6ff)", color: "var(--blue-700, #1d4ed8)", borderColor: "var(--blue-200, #bfdbfe)" }} title="Blue collar — priority fit">🔧 Blue collar</span>
+              )}
               <span className="distance-tag">
                 <IconNavigation />
                 {metersToFeet(lead.distance_from_route_m)}
@@ -165,6 +168,16 @@ export function LeadList({ leads, selectedLead, onSave, onSaveWithNote, onSelect
             <p className="lead-explanation" style={{ marginTop: "-0.1rem" }}>
               {lead.address ?? "Address unavailable"}
             </p>
+            {lead.owner_name && (
+              <p className="lead-explanation" style={{ marginTop: "-0.1rem", color: "var(--gray-600)" }}>
+                Owner: <strong>{lead.owner_name}</strong>
+                {lead.owner_name_confidence != null && (
+                  <span style={{ marginLeft: "0.3rem", fontSize: "0.65rem", color: "var(--gray-400)" }}>
+                    {Math.round(lead.owner_name_confidence * 100)}% confidence
+                  </span>
+                )}
+              </p>
+            )}
 
             {(lead.phone || lead.website) && (
               <div className="lead-contact-row">

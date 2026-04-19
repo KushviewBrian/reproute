@@ -35,6 +35,11 @@ export type DetailLead = {
   explanation: { fit: string; distance: string; actionability: string } | null;
   lat?: number | null;
   lng?: number | null;
+  // Phase 10
+  is_blue_collar?: boolean;
+  owner_name?: string | null;
+  owner_name_source?: string | null;
+  owner_name_confidence?: number | null;
 };
 
 export function leadToDetail(l: Lead): DetailLead {
@@ -52,6 +57,10 @@ export function leadToDetail(l: Lead): DetailLead {
     explanation: l.explanation,
     lat: l.lat,
     lng: l.lng,
+    is_blue_collar: l.is_blue_collar,
+    owner_name: l.owner_name,
+    owner_name_source: l.owner_name_source,
+    owner_name_confidence: l.owner_name_confidence,
   };
 }
 
@@ -68,6 +77,10 @@ export function savedLeadToDetail(s: SavedLead): DetailLead {
     distance_score: null,
     actionability_score: null,
     explanation: null,
+    is_blue_collar: (s as any).is_blue_collar ?? false,
+    owner_name: (s as any).owner_name ?? null,
+    owner_name_source: (s as any).owner_name_source ?? null,
+    owner_name_confidence: (s as any).owner_name_confidence ?? null,
   };
 }
 
@@ -352,7 +365,12 @@ export function LeadDetail({ lead, routeId, token, refreshToken, onClose }: Prop
       <div className="detail-header">
         <div className="detail-title-group">
           <h3 className="detail-title">{lead.name}</h3>
-          <p className="detail-subtitle">{lead.insurance_class ?? "Unknown class"}</p>
+          <p className="detail-subtitle">
+            {lead.insurance_class ?? "Unknown class"}
+            {lead.is_blue_collar && (
+              <span style={{ marginLeft: "0.4rem", fontSize: "0.7rem", background: "#eff6ff", color: "#1d4ed8", border: "1px solid #bfdbfe", borderRadius: "6px", padding: "0.1rem 0.4rem" }}>🔧 Blue collar</span>
+            )}
+          </p>
         </div>
         <button className="btn btn-icon btn-sm" onClick={onClose} title="Close">
           <IconX />
@@ -391,6 +409,19 @@ export function LeadDetail({ lead, routeId, token, refreshToken, onClose }: Prop
               ) : (
                 <span>{lead.website}</span>
               )}
+            </div>
+          )}
+          {lead.owner_name && (
+            <div className="detail-info-row">
+              <span style={{ fontSize: "0.72rem", color: "var(--gray-600)" }}>
+                Owner: <strong>{lead.owner_name}</strong>
+                {lead.owner_name_source && lead.owner_name_source !== "manual" && (
+                  <span style={{ marginLeft: "0.3rem", fontSize: "0.65rem", color: "var(--gray-400)" }}>via {lead.owner_name_source.replace(/_/g, " ")}</span>
+                )}
+                {lead.owner_name_confidence != null && (
+                  <span style={{ marginLeft: "0.25rem", fontSize: "0.65rem", color: "var(--gray-400)" }}>{Math.round(lead.owner_name_confidence * 100)}%</span>
+                )}
+              </span>
             </div>
           )}
           {!lead.address && !lead.phone && !lead.website && (

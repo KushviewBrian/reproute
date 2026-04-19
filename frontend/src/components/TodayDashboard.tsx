@@ -33,6 +33,11 @@ function Section({ title, items, onSelectLead }: { title: string; items: SavedLe
                   Follow-up: {new Date(item.next_follow_up_at).toLocaleDateString()}
                 </p>
               )}
+              {(item as any).owner_name && (
+                <p style={{ fontSize: "0.7rem", color: "var(--gray-600)", marginTop: "0.2rem" }}>
+                  Owner: <strong>{(item as any).owner_name}</strong>
+                </p>
+              )}
               {item.latest_note_text && (
                 <p style={{ fontSize: "0.72rem", color: "var(--gray-700)", marginTop: "0.25rem" }}>
                   Note: {item.latest_note_text}
@@ -106,6 +111,12 @@ export function TodayDashboard({ token, onGoToRoute, onSelectLead }: Props) {
       <Section title="Overdue follow-ups" items={data.overdue} onSelectLead={onSelectLead} />
       <Section title="Due today" items={data.due_today} onSelectLead={onSelectLead} />
       <Section title="High-priority untouched" items={data.high_priority_untouched} onSelectLead={onSelectLead} />
+      {data.blue_collar_today && data.blue_collar_today.length > 0 && (
+        <Section title="🔧 Blue-collar priorities" items={data.blue_collar_today} onSelectLead={onSelectLead} />
+      )}
+      {data.has_owner_name && data.has_owner_name.length > 0 && (
+        <Section title="👤 Leads with owner name" items={data.has_owner_name} onSelectLead={onSelectLead} />
+      )}
       <div className="saved-header">
         <h2>Recent route</h2>
         {data.recent_route ? (

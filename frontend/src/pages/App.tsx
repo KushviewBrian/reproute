@@ -105,6 +105,7 @@ export function App({ token, refreshToken }: AppProps) {
   const [showInstallHint, setShowInstallHint] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [validationStates, setValidationStates] = useState<Record<string, ValidationStateResponse>>({});
+  const [blueCollar, setBlueCollar] = useState<boolean | undefined>(undefined);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -177,6 +178,7 @@ export function App({ token, refreshToken }: AppProps) {
           insuranceClass: insuranceClass ? [insuranceClass] : undefined,
           limit: 100,
           scoreVersion: "v2",
+          blueCollar,
         });
         const sorted = sortLeads(data.leads, sortBy);
         setLeads(sorted);
@@ -210,7 +212,7 @@ export function App({ token, refreshToken }: AppProps) {
         throw err;
       }
     },
-    [token, minScore, hasPhone, hasWebsite, insuranceClass, sortBy],
+    [token, minScore, hasPhone, hasWebsite, insuranceClass, sortBy, blueCollar],
   );
 
   async function onCreated(created: { routeId: string; routeGeoJson: GeoJSON.LineString }) {
@@ -411,6 +413,17 @@ export function App({ token, refreshToken }: AppProps) {
                       Website
                     </button>
                   </div>
+                </div>
+
+                <div className="filter-row">
+                  <span className="filter-label">Blue collar</span>
+                  <button
+                    className={"toggle-chip" + (blueCollar ? " active" : "")}
+                    onClick={() => setBlueCollar(blueCollar ? undefined : true)}
+                    title="Only show blue-collar businesses (auto, trades, services)"
+                  >
+                    🔧 Blue collar only
+                  </button>
                 </div>
 
                 <div className="filter-row">
