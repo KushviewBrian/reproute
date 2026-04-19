@@ -13,6 +13,7 @@ import {
   updateSavedLead,
 } from "../api/client";
 import {
+  QUEUE_UPDATED_EVENT,
   enqueueNote,
   enqueueStatusChange,
   flushQueuedNotes,
@@ -166,6 +167,14 @@ export function LeadDetail({ lead, routeId, token, refreshToken, onClose }: Prop
     setNextAction("");
     setQueueCount(getQueuedCount());
   }, [lead, token]);
+
+  useEffect(() => {
+    function refreshQueuedCount() {
+      setQueueCount(getQueuedCount());
+    }
+    window.addEventListener(QUEUE_UPDATED_EVENT, refreshQueuedCount);
+    return () => window.removeEventListener(QUEUE_UPDATED_EVENT, refreshQueuedCount);
+  }, []);
 
   useEffect(() => {
     if (!lead || !token) {

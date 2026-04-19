@@ -379,7 +379,7 @@ Labels: 80–100 = Validated; 60–79 = Mostly valid; 40–59 = Needs review; 0�
 
 ### Phase 6 — Dataset Expansion
 
-**Status: Not started**
+**Status: In progress — OSM selective enrichment implemented and deployed; verification/tuning pending**
 
 **Scope:**
 Improve contact field completeness without cost blowout, using selective OSM enrichment on top of the existing Overture monthly refresh. Per `docs/datasetexpansion.md`.
@@ -605,7 +605,7 @@ MVP is complete when all are true:
 
 ## Immediate Next Sprint (Recommended)
 
-1. **Wire Phase 4 offline status change sync** — `SavedLeads.tsx` currently calls `updateSavedLead` directly even when offline; it must fall back to `enqueueStatusChange` + show a sync-state indicator when unsynced items exist. The queue flush functions and localStorage keys already exist in `offlineQueue.ts`; only the UI call-sites and indicator are missing. This is the next completable pure-code task.
+1. **Close evidence blockers for Phases 1/3/5** — run EXPLAIN, ingestion QA, 5-route scoring, and validation runtime evidence package against staging credentials, then attach artifact links and timestamps in `docs/PHASE1_4_VALIDATION.md`.
 2. **Close external platform blockers** — enforce branch protection, enable `/health` monitoring alerts, and wire log forwarding from Render with evidence links.
 3. **Finish Phase 2 verification/sign-off evidence** — run full negative auth/authz + middleware/security-header + startup-config suites in CI and log commit/CI references in `securityplan.md` and gate closeout entries.
 4. **Close remaining Phase 1 evidence** — replace EXPLAIN placeholder and commit one ingestion QA artifact with route IDs, commands, and p95 context in `docs/evidence/`.

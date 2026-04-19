@@ -6,13 +6,13 @@ This checklist operationalizes the 2-week hardening plan with proof-required gat
 
 - [ ] Required checks enforced on `main`: backend tests, frontend typecheck/build, security scans.
 - [ ] PR template/process includes: roadmap line item, test evidence, rollback note.
-- [ ] Production env contract documented and reviewed:
+- [x] Production env contract documented and reviewed:
   - `DATABASE_TLS_VERIFY=true`
   - `DATABASE_SSL_CA_PEM` set
   - `POC_MODE=false`
   - `CLERK_JWKS_URL` + `CLERK_JWT_ISSUER` set
   - `CORS_ALLOW_ORIGINS` exact origins
-- [ ] Post-deploy smoke checklist documented (`/health`, route/leads, today, exports).
+- [x] Post-deploy smoke checklist documented (`/health`, route/leads, today, exports).
 
 ## Gate 1 — Phase 2 Security Closeout
 
@@ -44,12 +44,24 @@ This checklist operationalizes the 2-week hardening plan with proof-required gat
 
 ## Gate 4 — Re-baseline + Next-Phase Lock
 
-- [ ] `docs/roadmap.md` statuses updated only with evidence-backed changes.
+- [x] `docs/roadmap.md` statuses updated only with evidence-backed changes.
 - [ ] Phase 6/7 design packet published (constraints, licensing, quota model, ops hardening sequence).
 - [ ] Release candidate summary published:
   - closed items
   - residual risks
   - next queue
+
+## Session Notes (2026-04-19)
+
+- Roadmap consistency fixed (`Phase 6` status + stale immediate-sprint item) in `docs/roadmap.md`.
+- Repo-local verification completed:
+  - `python3 -m compileall backend/app backend/tests scripts`
+  - `npm run -s typecheck`
+  - `npm run -s build`
+- Staging-backed evidence items remain blocked pending runtime credentials/env:
+  - `INGEST_DATABASE_URL`
+  - staging bearer token + route IDs
+  - local Python env missing `sqlalchemy` for `scripts/explain_candidate_query.py`
 
 ## Evidence entry template (required per gate item)
 

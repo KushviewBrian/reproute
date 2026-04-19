@@ -9,6 +9,7 @@ import { RouteForm } from "../components/RouteForm";
 import { SavedLeads } from "../components/SavedLeads";
 import { TodayDashboard } from "../components/TodayDashboard";
 import { cacheRouteLeads, readCachedRouteLeads } from "../lib/leadCache";
+import { flushQueuedNotes, flushQueuedStatusChanges } from "../lib/offlineQueue";
 
 type Tab = "today" | "route" | "saved";
 
@@ -104,6 +105,37 @@ export function App({ token, refreshToken }: AppProps) {
       setShowOnboarding(true);
     }
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !token) return;
+    let cancelled = false;
+    let flushInFlight = false;
+
+    async function flushOfflineQueues() {
+      if (cancelled || flushInFlight || !navigator.onLine) return;
+      flushInFlight = true;
+      try {
+        await Promise.allSettled([
+          flushQueuedNotes(token),
+          flushQueuedStatusChanges(token),
+        ]);
+      } finally {
+        flushInFlight = false;
+      }
+    }
+
+    void flushOfflineQueues();
+    const interval = window.setInterval(() => {
+      void flushOfflineQueues();
+    }, 30_000);
+    window.addEventListener("online", flushOfflineQueues);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      window.removeEventListener("online", flushOfflineQueues);
+    };
+  }, [token]);
 
   function sortLeads(input: Lead[], mode: "score" | "business_type"): Lead[] {
     const next = [...input];

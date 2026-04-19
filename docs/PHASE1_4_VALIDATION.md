@@ -21,13 +21,32 @@ This runbook captures repeatable checks for the remaining evidence-heavy items i
 ### Gate 0 — Stabilization Baseline + Merge Controls
 
 - [ ] Branch protection + required checks policy verified and documented.
-- [ ] Production env contract documented (`docs/DEPLOYMENT_GUIDE.md`, `docs/REQUIRED_SECRETS.md`).
-- [ ] Post-deploy `/health` + core flow smoke checklist documented.
+- [x] Production env contract documented (`docs/DEPLOYMENT_GUIDE.md`, `docs/REQUIRED_SECRETS.md`).
+- [x] Post-deploy `/health` + core flow smoke checklist documented.
 
 Evidence links:
 - Commit(s): `TODO`
 - CI run(s): `TODO`
 - Notes: `TODO`
+
+## Session Update (2026-04-19)
+
+- Added app-level offline queue flush orchestration and queue-count refresh events:
+  - `frontend/src/pages/App.tsx`
+  - `frontend/src/lib/offlineQueue.ts`
+  - `frontend/src/components/SavedLeads.tsx`
+  - `frontend/src/components/LeadDetail.tsx`
+- Re-baselined roadmap consistency:
+  - Phase 6 status now matches implemented state in `docs/roadmap.md`
+  - Immediate next sprint item updated to evidence-first closeout work
+- Recorded evidence and blockers in:
+  - `docs/evidence/session_roadmap_closure_2026-04-19.md`
+  - `docs/evidence/gate_closeout_2026-04-19.md`
+
+Blocked (staging dependencies unavailable in local session):
+- `INGEST_DATABASE_URL` not configured locally, so ingestion QA command was not executed to avoid writes against unknown DB target.
+- Scoring/validation runtime evidence requires staging bearer token and route IDs (not available in local env files).
+- `scripts/explain_candidate_query.py` execution blocked locally due missing `sqlalchemy` in local Python environment.
 
 ## Latest Evidence Snapshot (2026-04-17)
 

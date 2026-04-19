@@ -12,7 +12,7 @@ import {
   updateSavedLead,
 } from "../api/client";
 import { cacheSavedLeads, readCachedSavedLeads } from "../lib/savedLeadCache";
-import { enqueueStatusChange, getQueuedCount } from "../lib/offlineQueue";
+import { QUEUE_UPDATED_EVENT, enqueueStatusChange, getQueuedCount } from "../lib/offlineQueue";
 
 type Props = {
   token?: string;
@@ -164,6 +164,21 @@ export function SavedLeads({ token, currentRouteId, onAddToRoute, onCountChange,
       cancelled = true;
     };
   }, [token, status]);
+
+  useEffect(() => {
+    function refreshQueuedCount() {
+      setQueueCount(getQueuedCount());
+    }
+    refreshQueuedCount();
+    window.addEventListener("online", refreshQueuedCount);
+    window.addEventListener("focus", refreshQueuedCount);
+    window.addEventListener(QUEUE_UPDATED_EVENT, refreshQueuedCount);
+    return () => {
+      window.removeEventListener("online", refreshQueuedCount);
+      window.removeEventListener("focus", refreshQueuedCount);
+      window.removeEventListener(QUEUE_UPDATED_EVENT, refreshQueuedCount);
+    };
+  }, []);
 
   async function handleDelete(id: string) {
     await deleteSavedLead(id, token);

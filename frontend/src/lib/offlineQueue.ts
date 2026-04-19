@@ -11,6 +11,7 @@ type QueuedNote = {
 
 const KEY = "reproute_offline_note_queue_v1";
 const STATUS_KEY = "reproute_offline_status_queue_v1";
+export const QUEUE_UPDATED_EVENT = "reproute:queue-updated";
 
 type QueuedStatusChange = {
   business_id: string;
@@ -34,6 +35,7 @@ function readQueue(): QueuedNote[] {
 
 function writeQueue(queue: QueuedNote[]): void {
   localStorage.setItem(KEY, JSON.stringify(queue));
+  window.dispatchEvent(new Event(QUEUE_UPDATED_EVENT));
 }
 
 function readStatusQueue(): QueuedStatusChange[] {
@@ -49,6 +51,7 @@ function readStatusQueue(): QueuedStatusChange[] {
 
 function writeStatusQueue(queue: QueuedStatusChange[]): void {
   localStorage.setItem(STATUS_KEY, JSON.stringify(queue));
+  window.dispatchEvent(new Event(QUEUE_UPDATED_EVENT));
 }
 
 export function enqueueNote(item: Omit<QueuedNote, "queued_at">): void {
