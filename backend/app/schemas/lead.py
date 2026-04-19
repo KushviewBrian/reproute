@@ -1,5 +1,4 @@
 from uuid import UUID
-
 from pydantic import BaseModel
 
 
@@ -26,6 +25,18 @@ class LeadItem(BaseModel):
     rank_reason_v2: list[str] | None = None
     lat: float | None = None
     lng: float | None = None
+    # Phase 10
+    is_blue_collar: bool = False
+    owner_name: str | None = None
+    owner_name_source: str | None = None
+    owner_name_confidence: float | None = None
+
+
+class LeadGroup(BaseModel):
+    key: str
+    label: str
+    count: int
+    leads: list[LeadItem]
 
 
 class LeadsResponse(BaseModel):
@@ -33,3 +44,5 @@ class LeadsResponse(BaseModel):
     leads: list[LeadItem]
     total: int
     filtered: int
+    # populated when group_by is requested
+    groups: list[LeadGroup] | None = None

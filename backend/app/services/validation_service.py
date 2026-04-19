@@ -246,6 +246,52 @@ def _classify_request_failure(exc: Exception) -> tuple[str, str, float]:
     return "network", "unknown", 40.0
 
 
+import json as _json
+import re as _re
+
+
+def _extract_owner_from_html(html):
+    # Returns (name, source) or (None, None)
+    for script_match in _RE_JSONLD.finditer(html):
+        try:
+            data = _json.loads(script_match.group(1))
+            data_list = data if isinstance(data, list) else [data]
+            for item in data_list:
+                if not isinstance(item, dict):
+                    continue
+                if item.get("@type") == "Person":
+                    name = (item.get("name") or "").strip()
+                    if name:
+                        return name, "website_jsonld"
+                for key in ("employee", "founder", "owner"):
+                    person = item.get(key)
+                    if isinstance(person, dict) and person.get("@type") == "Person":
+                        name = (person.get("name") or "").strip()
+                        if name:
+                            return name, "website_jsonld"
+        except Exception:
+            continue
+    for pattern in _OWNER_TEXT_PATTERNS:
+        m = pattern.search(html)
+        if m:
+            name = m.group(1).strip()
+            words = name.split()
+            if 1 <= len(words) <= 5 and len(name) <= 60 and not any(c.isdigit() for c in name):
+                return name, "website_text"
+    return None, None
+
+
+_RE_JSONLD = _re.compile(
+    r"<script[^>]+type=(?:[\x22\x27])[^\x22\x27]*ld[+]json(?:[\x22\x27])[^>]*>(.*?)</script>",
+    _re.IGNORECASE | _re.DOTALL,
+)
+_OWNER_TEXT_PATTERNS = [
+    _re.compile(r"[Oo]wner[:\s]+([A-Z][a-zA-Z\s\-]{4,40})", _re.MULTILINE),
+    _re.compile(r"[Ff]ounded by[:\s]+([A-Z][a-zA-Z\s\-]{4,40})", _re.MULTILINE),
+    _re.compile(r"[Cc]ontact\s+([A-Z][a-z]+(?:\s[A-Z][a-z]+)+)", _re.MULTILINE),
+]
+
+
 async def _validate_website(website: str | None) -> FieldResult:
     settings = get_settings()
     if not website:
@@ -300,6 +346,7 @@ async def _validate_website(website: str | None) -> FieldResult:
                     evidence_json={"status_code": resp.status_code},
                     next_check_days=14,
                 )
+            owner_name, owner_source = _extract_owner_from_html(resp.text)
             return FieldResult(
                 field_name="website",
                 state="valid",
@@ -307,7 +354,12 @@ async def _validate_website(website: str | None) -> FieldResult:
                 failure_class=None,
                 value_current=website,
                 value_normalized=str(resp.url),
-                evidence_json={"status_code": resp.status_code, "content_length": len(resp.text)},
+                evidence_json={
+                    "status_code": resp.status_code,
+                    "content_length": len(resp.text),
+                    "owner_name": owner_name,
+                    "owner_name_source": owner_source,
+                },
                 next_check_days=30,
             )
         except Exception as exc:  # pragma: no cover - behavior covered by classifier unit tests

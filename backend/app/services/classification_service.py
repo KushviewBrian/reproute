@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 
+BLUE_COLLAR_CLASSES = frozenset({"Auto Service", "Contractor / Trades", "Personal Services"})
+
 BASIC_CATEGORY_MAP = {
     "restaurant": "Food & Beverage",
     "bar": "Food & Beverage",
@@ -51,24 +53,56 @@ HIERARCHY_TOKEN_MAP = [
     ("religious", "Exclude"),
 ]
 
-NAME_KEYWORDS = {
-    "plumbing": "Contractor / Trades",
-    "hvac": "Contractor / Trades",
-    "electric": "Contractor / Trades",
-    "auto": "Auto Service",
-    "repair": "Auto Service",
-    "restaurant": "Food & Beverage",
-    "cafe": "Food & Beverage",
-    "salon": "Personal Services",
-    "barber": "Personal Services",
-    "dental": "Medical / Clinic",
-    "clinic": "Medical / Clinic",
-    "law": "Professional / Office",
-    "accounting": "Professional / Office",
-}
+# Multi-word keywords must come before single-word prefixes that overlap.
+NAME_KEYWORDS: list[tuple[str, str]] = [
+    ("pressure wash", "Personal Services"),
+    ("plumbing", "Contractor / Trades"),
+    ("hvac", "Contractor / Trades"),
+    ("electric", "Contractor / Trades"),
+    ("roofing", "Contractor / Trades"),
+    ("weld", "Contractor / Trades"),
+    ("fabricat", "Contractor / Trades"),
+    ("auto detail", "Auto Service"),
+    ("auto glass", "Auto Service"),
+    ("auto", "Auto Service"),
+    ("detail", "Auto Service"),
+    ("repair", "Auto Service"),
+    ("tow", "Auto Service"),
+    ("restaurant", "Food & Beverage"),
+    ("cafe", "Food & Beverage"),
+    ("salon", "Personal Services"),
+    ("barber", "Personal Services"),
+    ("pest", "Personal Services"),
+    ("lawn", "Personal Services"),
+    ("landscape", "Personal Services"),
+    ("painting contractor", "Personal Services"),
+    ("paint", "Personal Services"),
+    ("cleaning service", "Personal Services"),
+    ("clean", "Personal Services"),
+    ("locksmith", "Personal Services"),
+    ("lock", "Personal Services"),
+    ("dental", "Medical / Clinic"),
+    ("clinic", "Medical / Clinic"),
+    ("law", "Professional / Office"),
+    ("accounting", "Professional / Office"),
+]
 
 
-def classify(basic_category: str | None, taxonomy_hierarchy: list[str] | None, name: str | None) -> str:
+def classify(
+    basic_category: str | None,
+    taxonomy_hierarchy: list[str] | None,
+    name: str | None,
+) -> tuple[str, bool]:
+    """Return (insurance_class, is_blue_collar)."""
+    insurance_class = _classify_class(basic_category, taxonomy_hierarchy, name)
+    return insurance_class, insurance_class in BLUE_COLLAR_CLASSES
+
+
+def _classify_class(
+    basic_category: str | None,
+    taxonomy_hierarchy: list[str] | None,
+    name: str | None,
+) -> str:
     if basic_category:
         mapped = BASIC_CATEGORY_MAP.get(basic_category)
         if mapped:
@@ -82,7 +116,7 @@ def classify(basic_category: str | None, taxonomy_hierarchy: list[str] | None, n
 
     if name:
         n = name.lower()
-        for keyword, insurance_class in NAME_KEYWORDS.items():
+        for keyword, insurance_class in NAME_KEYWORDS:
             if keyword in n:
                 return insurance_class
 

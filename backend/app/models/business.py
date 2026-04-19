@@ -1,7 +1,7 @@
 import uuid
 
 from geoalchemy2 import Geography
-from sqlalchemy import DateTime, Index, Numeric, String, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, Index, Numeric, String, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -48,3 +48,9 @@ class Business(Base):
     osm_phone: Mapped[str | None] = mapped_column(String)
     osm_website: Mapped[str | None] = mapped_column(String)
     city_license_verified_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True))
+    # Phase 10
+    is_blue_collar: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    owner_name: Mapped[str | None] = mapped_column(String)
+    owner_name_source: Mapped[str | None] = mapped_column(String)
+    owner_name_confidence: Mapped[float | None] = mapped_column(Numeric(4, 3))
+    owner_name_last_checked_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True))

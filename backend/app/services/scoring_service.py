@@ -102,6 +102,7 @@ def fit_score_v2(
     confidence: float | None,
     validation_confidence: float | None,
     name: str | None,
+    is_blue_collar: bool = False,
 ) -> int:
     base = float(FIT_SCORES.get(insurance_class or "Other Commercial", 40))
     if insurance_class == "Exclude":
@@ -111,6 +112,8 @@ def fit_score_v2(
     if validation_confidence is not None:
         base = base * (0.9 + 0.1 * max(min(validation_confidence / 100.0, 1.0), 0.0))
     base = max(base - name_quality_penalty(name), 0.0)
+    if is_blue_collar:
+        base = min(base + 5.0, 100.0)
     return clamp_score(base)
 
 
@@ -238,6 +241,8 @@ def score_weights_v2(feedback_sample_size: int) -> tuple[float, float, float, fl
 
 def score_candidate(candidate: dict) -> dict:
     fit = FIT_SCORES.get(candidate.get("insurance_class") or "Other Commercial", 40)
+    if candidate.get("is_blue_collar"):
+        fit = min(fit + 5, 100)
     dist = distance_score(float(candidate["distance_from_route_m"]))
     act = actionability_score(
         has_address=bool(candidate.get("has_address")),
@@ -282,6 +287,7 @@ def score_candidate_v2(
         confidence=confidence,
         validation_confidence=validation_confidence,
         name=candidate.get("name"),
+        is_blue_collar=bool(candidate.get("is_blue_collar")),
     )
     dist = distance_score_v2(distance_m)
     act = actionability_score_v2(
@@ -309,6 +315,8 @@ def score_candidate_v2(
     final = clamp_score((fit * fit_w) + (dist * dist_w) + (act * act_w) + (feedback * feedback_w))
 
     rank_reasons: list[str] = []
+    if candidate.get("is_blue_collar"):
+        rank_reasons.append("Blue collar fit")
     if fit >= 80:
         rank_reasons.append("Strong class fit")
     if dist >= 70:

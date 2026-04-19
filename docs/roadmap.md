@@ -1,6 +1,12 @@
 # RepRoute Master Roadmap
 
-Updated: April 19, 2026 (All roadmap code tasks complete — commit d180f8a; Phase 10 plan added)
+Updated: April 19, 2026 (Phase 10 code complete — all 16 files patched, 105 backend tests passing)
+
+##
+Developer notes:
+Find a way to streamline / optimize /minimize server usage
+plan mobile app / integration
+integrate with google/apple maps?
 
 ## Purpose
 
@@ -99,6 +105,7 @@ RepRoute is a route-aware field sales prospecting platform for B2B reps. Insuran
 - Phase 6 Overpass retry complete: `osm_enrichment_service.py` retries up to 2 attempts with 1s delay on transient errors; 4xx terminal; exhaustion returns None gracefully — enrichment never raises, always records attempted timestamp
 - 11 new Overpass resilience tests added; 105 backend tests total passing
 - Phase 0 baseline docs complete: `backend/.env.example`, `frontend/.env.example`, root `.env.example` with all env vars through Phase 7; `README.md` updated with accurate setup steps and runbook reference
+- Phase 10 code complete: `is_blue_collar` + owner-contact columns (migration 0008), `classify()` returns `(insurance_class, is_blue_collar)` tuple, expanded blue-collar category mappings (auto detailing, towing, weld/fab, pest, lawn, pressure wash, painting, cleaning, locksmith), +5 fit-score bonus in v1 and v2, OSM `operator` tag extraction → `owner_name`, JSON-LD Person + website-text heuristic owner extraction in validation service, `sort_by` / `sort_dir` / `group_by` on `GET /leads` and `GET /saved-leads` (9 sort modes, 7 group modes), expanded filter params (`blue_collar`, `has_owner_name`, `operating_status`, `score_band`, `has_notes`, `saved_after`, `saved_before`, `overdue_only`, `untouched_only`), Today view gains `blue_collar_today` and `has_owner_name` sections, Phase 10 export columns added to both CSVs (`is_blue_collar`, `owner_name`, `owner_name_source`, `owner_name_confidence` as %, `operating_status`), grouped CSV export via `?group_by=`, manual `owner_name` write via `PATCH /saved-leads/{id}` (source=manual, confidence=1.0, never overwritten), `ingest_overture.py` and `backfill_classification.py` updated for tuple unpack + `is_blue_collar` upsert; all 105 backend tests passing
 - Phase 8 prerequisite complete: `docs/RUNBOOK.md` (266 lines) covering ingestion trigger, all quota/outage scenarios (ORS/Photon/Overpass/Clerk/validation), DB migration recovery, Redis down, CF Worker troubleshooting, Render + CF Pages rollback, support contacts, pilot P0-P3 SLA
 - `docs/REQUIRED_SECRETS.md` and `docs/DEPLOYMENT_GUIDE.md` updated with OVERPASS_* and ENRICHMENT_* env vars
 
@@ -586,7 +593,7 @@ Run structured pilot sessions with real reps. Measure against KPI targets. Itera
 
 ### Phase 10 — Lead Intelligence: Sorting, Grouping, Blue-Collar Category, and Owner Contact
 
-**Status: Not started**
+**Status: Code complete — staging evidence and exit-criteria sign-off remaining**
 
 **Scope:**
 Deepen lead handling quality and rep control across every tab. This phase introduces a blue-collar meta-category for faster vertical-within-vertical targeting, a structured owner/contact name field with multi-source extraction and validation, meaningful server-side sort and filter expansion, and user-controlled grouping on the lead list and saved tabs. The Today view gains configurable sections. Exports gain the new fields. This is fundamentally a data model + API + workflow phase — UI elements are included only where required to expose the new capabilities.
@@ -868,7 +875,7 @@ MVP is complete when all are true:
 | 7 | Operations hardening | In progress — code complete; platform setup remaining | Low |
 | 8 | MVP verification and QA | Not started | Low |
 | 9 | Pilot and launch | Not started | Low |
-| 10 | Lead intelligence — sorting, grouping, blue-collar, owner contact | Not started | Low |
+| 10 | Lead intelligence — sorting, grouping, blue-collar, owner contact | Code complete — evidence pending | Medium |
 
 ---
 

@@ -22,6 +22,37 @@ logger = logging.getLogger(__name__)
 # Quota
 # ---------------------------------------------------------------------------
 
+
+def _write_owner_name(
+    business,
+    name: str,
+    source: str,
+    confidence: float,
+) -> None:
+    """Write owner_name if the new source has equal or higher confidence than existing."""
+    from datetime import UTC, datetime
+
+    SOURCE_CONFIDENCE = {
+        "manual": 1.0,
+        "website_jsonld": 0.85,
+        "osm_operator": 0.70,
+        "website_text": 0.50,
+        "unknown": 0.10,
+    }
+    existing_src = business.owner_name_source or ""
+    existing_conf = float(business.owner_name_confidence or 0.0)
+    # Never overwrite manual
+    if existing_src == "manual":
+        return
+    new_conf = SOURCE_CONFIDENCE.get(source, confidence)
+    if business.owner_name and new_conf <= existing_conf:
+        return
+    business.owner_name = name
+    business.owner_name_source = source
+    business.owner_name_confidence = new_conf
+    business.owner_name_last_checked_at = datetime.now(UTC)
+
+
 async def reserve_enrichment_caps(user_id: UUID | None) -> None:
     settings = get_settings()
     now = datetime.now(UTC)
@@ -83,6 +114,11 @@ async def apply_enrichment(db: AsyncSession, business: Business, result: OsmEnri
     if website_promoted:
         business.website = result.osm_website
         business.has_website = True
+
+    # Write owner_name from OSM operator tag when no higher-confidence source exists
+    operator = getattr(result, "osm_operator", None)
+    if operator:
+        _write_owner_name(business, operator, source="osm_operator", confidence=0.70)
 
     await db.commit()
 

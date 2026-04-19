@@ -124,7 +124,7 @@ def normalize_row(row: dict) -> dict | None:
     taxonomy = row.get("taxonomy") or {}
     hierarchy = taxonomy.get("hierarchy") if isinstance(taxonomy, dict) else None
 
-    insurance_class = classify(
+    insurance_class, is_blue_collar = classify(
         basic_category=row.get("basic_category"),
         taxonomy_hierarchy=hierarchy or [],
         name=name,
@@ -148,6 +148,7 @@ def normalize_row(row: dict) -> dict | None:
         "confidence_score": row.get("confidence"),
         "lng": lng,
         "lat": lat,
+        "is_blue_collar": is_blue_collar,
         "has_phone": bool(phones),
         "has_website": bool(websites),
         "has_address": bool(addr0),
@@ -161,12 +162,12 @@ def upsert_batch(engine, rows: list[dict]) -> None:
         """
         INSERT INTO business (
           id, external_source, external_id, name, category_primary, category_secondary,
-          insurance_class, address_line1, city, state, postal_code, phone, website,
+          insurance_class, is_blue_collar, address_line1, city, state, postal_code, phone, website,
           operating_status, confidence_score, geom, has_phone, has_website, has_address,
           source_payload_json, last_seen_at
         ) VALUES (
           :id, :external_source, :external_id, :name, :category_primary, :category_secondary,
-          :insurance_class, :address_line1, :city, :state, :postal_code, :phone, :website,
+          :insurance_class, :is_blue_collar, :address_line1, :city, :state, :postal_code, :phone, :website,
           :operating_status, :confidence_score, ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography,
           :has_phone, :has_website, :has_address, CAST(:source_payload_json AS jsonb), :last_seen_at
         )
@@ -175,6 +176,7 @@ def upsert_batch(engine, rows: list[dict]) -> None:
           category_primary = EXCLUDED.category_primary,
           category_secondary = EXCLUDED.category_secondary,
           insurance_class = EXCLUDED.insurance_class,
+          is_blue_collar = EXCLUDED.is_blue_collar,
           address_line1 = EXCLUDED.address_line1,
           city = EXCLUDED.city,
           state = EXCLUDED.state,

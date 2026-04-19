@@ -27,7 +27,7 @@ def main() -> None:
         """
     )
 
-    update_sql = text("UPDATE business SET insurance_class = :insurance_class, updated_at = now() WHERE id = :id")
+    update_sql = text("UPDATE business SET insurance_class = :insurance_class, is_blue_collar = :is_blue_collar, updated_at = now() WHERE id = :id")
 
     with engine.begin() as conn:
         rows = conn.execute(fetch_sql).mappings().all()
@@ -36,8 +36,8 @@ def main() -> None:
             source_payload = row["source_payload_json"] or {}
             taxonomy = source_payload.get("taxonomy") if isinstance(source_payload, dict) else {}
             hierarchy = taxonomy.get("hierarchy", []) if isinstance(taxonomy, dict) else []
-            insurance_class = classify(row["category_primary"], hierarchy, row["name"])
-            updates.append({"id": str(row["id"]), "insurance_class": insurance_class})
+            insurance_class, is_blue_collar = classify(row["category_primary"], hierarchy, row["name"])
+            updates.append({"id": str(row["id"]), "insurance_class": insurance_class, "is_blue_collar": is_blue_collar})
 
             if len(updates) >= args.batch_size:
                 conn.execute(update_sql, updates)

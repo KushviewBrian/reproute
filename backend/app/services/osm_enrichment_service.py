@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 _PHONE_TAGS = ("phone", "contact:phone", "mobile", "contact:mobile")
 _WEBSITE_TAGS = ("website", "contact:website", "url")
+_OPERATOR_TAGS = ("operator", "owner")
 
 # Retry policy for Overpass upstream calls.
 # The public endpoint is unreliable under load; we attempt twice with a short
@@ -28,6 +29,7 @@ class OsmEnrichmentResult:
     osm_website: str | None
     opening_hours: str | None
     element_id: str | None
+    osm_operator: str | None = None
 
 
 def _extract_tags(elements: list[dict]) -> dict:
@@ -153,14 +155,16 @@ async def fetch_osm_enrichment(lat: float, lng: float, name: str) -> OsmEnrichme
     phone = next((_clean_phone(tags.get(t)) for t in _PHONE_TAGS if tags.get(t)), None)
     website = next((_clean_website(tags.get(t)) for t in _WEBSITE_TAGS if tags.get(t)), None)
     hours = tags.get("opening_hours")
+    osm_operator = next((tags.get(t, "").strip() or None for t in _OPERATOR_TAGS if tags.get(t, "").strip()), None)
     element_id = f"{elements[0].get('type', '?')}_{elements[0].get('id', '?')}"
 
-    if not phone and not website and not hours:
+    if not phone and not website and not hours and not osm_operator:
         return None
 
     return OsmEnrichmentResult(
         osm_phone=phone,
         osm_website=website,
         opening_hours=hours,
+        osm_operator=osm_operator,
         element_id=element_id,
     )

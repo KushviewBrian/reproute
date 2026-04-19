@@ -1,5 +1,4 @@
 from uuid import UUID
-
 from pydantic import BaseModel
 from typing import Literal
 from datetime import datetime
@@ -15,6 +14,7 @@ class UpdateSavedLeadRequest(BaseModel):
     priority: int | None = None
     next_follow_up_at: datetime | None = None
     last_contact_attempt_at: datetime | None = None
+    owner_name: str | None = None  # Phase 10: manual rep entry
 
 
 class SavedLeadItem(BaseModel):
@@ -34,6 +34,21 @@ class SavedLeadItem(BaseModel):
     final_score: int | None = None
     latest_note_text: str | None = None
     latest_note_created_at: datetime | None = None
+    # Phase 10
+    is_blue_collar: bool = False
+    owner_name: str | None = None
+    owner_name_source: str | None = None
+    owner_name_confidence: float | None = None
+    insurance_class: str | None = None
+    operating_status: str | None = None
+    validation_state: str | None = None
+
+
+class SavedLeadGroup(BaseModel):
+    key: str
+    label: str
+    count: int
+    leads: list[SavedLeadItem]
 
 
 class TodayRecentRoute(BaseModel):
@@ -47,3 +62,6 @@ class SavedLeadsTodayResponse(BaseModel):
     due_today: list[SavedLeadItem]
     high_priority_untouched: list[SavedLeadItem]
     recent_route: TodayRecentRoute | None = None
+    # Phase 10 new sections
+    blue_collar_today: list[SavedLeadItem] = []
+    has_owner_name: list[SavedLeadItem] = []
