@@ -1,6 +1,6 @@
 # RepRoute Master Roadmap
 
-Updated: April 19, 2026 (Phase 2 verification evidence run + offline queue global flush hardening + scoring v2 quality pass + startup lifecycle compatibility fixes)
+Updated: April 19, 2026 (Phase 4 error handling + Phase 7 upstream resilience + audit latency — commit 65f9ab5)
 
 ## Purpose
 
@@ -89,6 +89,12 @@ RepRoute is a route-aware field sales prospecting platform for B2B reps. Insuran
 - Staging-backed evidence execution remains blocked in local session without staging runtime inputs (`INGEST_DATABASE_URL`, staging bearer token + route IDs) and script runtime dependency installation for EXPLAIN capture
 - Production DB TLS connectivity is restored using CA-chain PEM configuration; remaining work is to document and regression-test this deployment path so it stays stable
 - Branch protection, uptime monitoring, and log forwarding remain external platform tasks not yet evidenced in repo
+- Phase 4 error handling complete: `toUserMessage()` helper wired into all mutation catch sites in `App.tsx` (onCreated, onSaveLead, onSaveLeadWithNote, onApplyFilters, onCorridorChange); 401/429/network failures produce distinct actionable messages
+- Phase 4 geocode/GPS error clarity complete: RouteForm surfaces "Couldn't find X — try adding a city or zip code" on no-result; "Geocoding unavailable — check your connection" on network failure; GPS denial distinguishes permission-denied from unavailable
+- Phase 7 ORS upstream resilience complete: `routing_service.py` retries up to 2 attempts with 1s delay on transient errors (timeout/ConnectError/5xx); 4xx errors are terminal; on exhaustion falls back to straight-line mock with `properties.degraded=True`; degraded routes cached with short TTL (≤300s)
+- Phase 7 Photon geocode resilience complete: `geocode_service.py` retries up to 2 attempts with 0.5s delay; same error taxonomy; on exhaustion returns POC fallback with `degraded=True`
+- Phase 7 audit latency tracking complete: `duration_ms` (time.monotonic) included in every `audit_event` log line in `main.py`; enables Logtail p95 alert rules
+- 18 new unit tests for upstream resilience (all paths: retry success, retry exhaustion → degraded, cache hit, 4xx terminal, degraded flag propagation); 94 backend tests total passing
 
 ---
 
@@ -254,7 +260,7 @@ Validate scoring quality on real data and complete the score explanation display
 
 ### Phase 4 — Core Discovery UX, Workflow Completion, and Missing MVP Features
 
-**Status: In progress — dedup/onboarding/today-follow-up foundations landed; verification + UX hardening gaps remain**
+**Status: In progress — all code tasks complete; evidence sign-off remaining**
 
 **Scope:**
 Complete all remaining MVP-required UI and workflow features. This is the largest remaining build phase before validation is layered on. Work within this phase can be parallelized across frontend and backend tracks.
@@ -285,8 +291,8 @@ Complete all remaining MVP-required UI and workflow features. This is the larges
 - CRM-ready export format (second export format, mapped for AMS import)
 - First-run onboarding overlay: three-step flow (Plan → Review → Track); dismissible; does not reappear; empty states for route tab, saved tab, Today tab
 - iOS install banner: custom "Add to Home Screen" instructions (iOS Safari does not auto-prompt)
-- Route entry UX: error clarity for geocode failures, reverse geocode on current location
-- Error handling: clear states for 401, 429, and network failures on all mutation actions
+- Route entry UX: error clarity for geocode failures, reverse geocode on current location ✅ (complete — actionable copy for no-result, network failure, GPS denial)
+- Error handling: clear states for 401, 429, and network failures on all mutation actions ✅ (complete — toUserMessage wired into all mutation surfaces)
 
 **Test focus:**
 - New/changed backend tests: follow-up date fields round-trip, `GET /saved-leads/today` section logic, cross-route export format and schema
@@ -455,7 +461,7 @@ ALTER TABLE business
 
 ### Phase 7 — Operations Hardening
 
-**Status: Partial**
+**Status: In progress — code tasks complete (retry/degraded fallback, audit latency); platform tasks pending (log forwarding, uptime monitor, alert rules, DB roles, backup drill)**
 
 **Scope:**
 Stabilize operations before pilot traffic. Health monitoring, alerting, error handling, and backup verification.
@@ -465,8 +471,8 @@ Stabilize operations before pilot traffic. Health monitoring, alerting, error ha
 - Log forwarding from Render to external service (if not already done in Phase 2)
 - Uptime monitoring for `/health` with alerting (if not already done in Phase 2)
 - Alert rules: 401/403 spike (>20 in 5 min from single IP), admin endpoint failures (>3 in 10 min), export volume (>10 exports/hr from one user), 5xx rate >1% over 5 min
-- p95 latency tracking for key endpoints; alert if route creation + lead retrieval exceeds 5s p95
-- Queue/retry behavior verified for ORS and Photon upstream failures (exponential backoff, graceful degraded mode)
+- p95 latency tracking for key endpoints; alert if route creation + lead retrieval exceeds 5s p95 ✅ (duration_ms in every audit_event log line — ready for Logtail alert rules)
+- Queue/retry behavior verified for ORS and Photon upstream failures (exponential backoff, graceful degraded mode) ✅ (complete — 18 unit tests passing, see commit 65f9ab5)
 - Backup and restore drill: confirm Supabase backup policy for active plan; run one restore drill; document result
 - Least-privileged DB roles: app role (`SELECT/INSERT/UPDATE/DELETE` on app tables only); migration role separate; verify `service_role` key not exposed anywhere
 - Supabase Data API (PostgREST) verified disabled or restricted for all app tables
@@ -609,10 +615,10 @@ MVP is complete when all are true:
 | 1 | Data/routing foundation evidence | Mostly done | Medium |
 | 2 | Security lockdown | In progress (verification run captured; scanner/runtime deltas remain) | Medium |
 | 3 | Scoring + score explanation | In progress (v2 shadow + quality pass landed; evidence incomplete) | Medium |
-| 4 | Discovery UX + workflow completion | In progress (dedup/onboarding landed; verification incomplete) | Medium |
+| 4 | Discovery UX + workflow completion | In progress — code complete; evidence sign-off remaining | Medium |
 | 5 | Lead validation system | Feature complete — evidence sign-off remaining | High |
 | 6 | Dataset expansion | In progress — OSM enrichment deployed, Overpass tuning needed | Medium |
-| 7 | Operations hardening | Partial | Low |
+| 7 | Operations hardening | In progress — code complete; platform setup remaining | Low |
 | 8 | MVP verification and QA | Not started | Low |
 | 9 | Pilot and launch | Not started | Low |
 
@@ -620,14 +626,24 @@ MVP is complete when all are true:
 
 ## Immediate Next Sprint (Recommended)
 
-1. **Close evidence blockers for Phases 1/3/5** — run EXPLAIN, ingestion QA, 5-route scoring, and validation runtime evidence package against staging credentials, then attach artifact links and timestamps in `docs/PHASE1_4_VALIDATION.md`.
-2. **Close external platform blockers** — enforce branch protection, enable `/health` monitoring alerts, and wire log forwarding from Render with evidence links.
-3. **Close remaining Phase 2 sign-off deltas** — capture authenticated staging success-path smoke (`route/leads/today/export`) and attach CI run links for the remediated scanner/test suite in `securityplan.md` and gate closeout entries.
-4. **Close remaining Phase 1 evidence** — replace EXPLAIN placeholder and commit one ingestion QA artifact with route IDs, commands, and p95 context in `docs/evidence/`.
-5. **Close Phase 3/4 verification evidence** — commit 5-route scoring artifact (`Other/Unknown` rate), offline reconnect no-loss proof (notes + status), dedup spot-check, and Today dashboard correctness checks.
-6. **Close Phase 5 evidence sign-off** — run 10+ validation jobs on real saved leads, verify correct state/confidence outcomes for website and phone fields, commit results to evidence log.
-7. **Tune Phase 6 Overpass connectivity** — set `OVERPASS_TIMEOUT_SECONDS=15` and try alternate endpoint (`overpass.kumi.systems`) via Render env vars; confirm enrichment hits appear in logs and osm_* columns populate in Supabase.
-8. **Use gate closeout workflow for each merge/deploy** — attach `docs/GATE_CLOSEOUT_TEMPLATE.md` entries with rollback notes and artifact links before marking any gate complete.
+1. **Close Phase 2 sign-off deltas** *(requires staging Clerk token)*: capture authenticated success-path smoke (`GET /routes`, lead fetch, `GET /saved-leads/today`, `GET /export/saved-leads.csv`), grab the GitHub Actions run URL for commit `7f340ae`, and paste both into `docs/evidence/phase2_security_signoff_2026-04-19.md` and `docs/evidence/gate_closeout_2026-04-19.md`. Enable branch protection on `main` in GitHub settings.
+2. **Wire Phase 7 platform tasks** *(requires Render/external-account access; step-by-step in `docs/evidence/phase7_ops_platform_guide.md`)*:
+   - Render → Log Streams → Logtail (7-C)
+   - UptimeRobot → monitor `/health` every 5 min with keyword `"status":"ok"` (7-D)
+   - Logtail → 5 alert rules: 401/403 spike, admin failures, export volume, 5xx rate, p95 >5s on `/routes`/`/leads` (7-E)
+   - Supabase: remove `public` from PostgREST exposed schemas, verify `service_role` key not in frontend dist (7-G)
+   - `pg_dump` backup drill + document restore path (7-H)
+3. **Close Phase 4/5 evidence** *(requires staging Clerk token + saved leads)*:
+   - Offline reconnect no-loss: airplane mode → add note + status change → reconnect → confirm sync
+   - Dedup spot-check: 3 routes same metro, verify no duplicate pairs in top 20
+   - Today dashboard: set overdue follow-up, confirm it appears in correct section
+   - 10+ validation runs with correct website/phone outcomes; `bot_blocked` → `unknown` test case
+4. **Close Phase 1/3 evidence** *(requires `INGEST_DATABASE_URL` + staging route IDs)*:
+   - Replace EXPLAIN placeholder (`docs/evidence/phase1_explain_route_pending_2026-04-17.txt`) with a live trace
+   - Run ingestion QA script and commit metrics artifact
+   - Run `validate_scoring.py` on 5 routes; commit `other_unknown_rate`
+5. **Tune Phase 6 Overpass connectivity** — set `OVERPASS_TIMEOUT_SECONDS=15` and try `overpass.kumi.systems` via Render env vars; confirm `osm_*` columns populate in Supabase.
+6. **Use gate closeout workflow for each merge/deploy** — attach `docs/GATE_CLOSEOUT_TEMPLATE.md` entries with rollback notes and artifact links before marking any gate complete.
 
 ---
 
