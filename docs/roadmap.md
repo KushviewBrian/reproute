@@ -1,6 +1,6 @@
 # RepRoute Master Roadmap
 
-Updated: April 19, 2026 (offline queue global flush hardening + scoring v2 shadow scaffolding + roadmap/evidence rebaseline)
+Updated: April 19, 2026 (offline queue global flush hardening + scoring v2 quality pass + startup lifecycle compatibility fixes)
 
 ## Purpose
 
@@ -37,6 +37,7 @@ RepRoute is a route-aware field sales prospecting platform for B2B reps. Insuran
 - Route creation and lead retrieval pipeline (end-to-end)
 - Classification and scoring (rule-based, insurance-tuned)
 - Hybrid scoring v2 shadow scaffolding: deterministic calibrated components, additive feedback priors, dual-compute storage, and score-version gating (`v1` default)
+- Scoring v2 quality pass implemented: geo-aware feedback priors, validation-failure penalties, weak-name penalties, and sample-size-adaptive feedback weighting
 - Discovery UI: route, list/map, detail, saved views
 - Save lead, status changes, notes, per-route CSV export
 - Today dashboard (initial), follow-up date fields (initial), and cross-route saved-leads CSV export
@@ -51,6 +52,7 @@ RepRoute is a route-aware field sales prospecting platform for B2B reps. Insuran
 - Map reinitialization regression fixed: MapPanel now uses a ref for onSelectLead instead of depending on it in the init effect, preventing the map from being torn down on every App render
 - Security hardening (partial): request body limit, backend security headers, extended rate limits, Cloudflare Pages `_headers`
 - Security middleware test scaffolding added (`backend/tests/test_security_middleware.py`)
+- FastAPI startup lifecycle migrated to lifespan handler with backward-compatible `startup()` shim for test/import compatibility
 - Structured audit logging added for mutation/admin/auth-denial events (middleware-based)
 - Reliability gate documentation baseline added (deployment contract + evidence tracker updates)
 - Reliability process artifacts added: PR gate template and gate closeout template
@@ -70,6 +72,7 @@ RepRoute is a route-aware field sales prospecting platform for B2B reps. Insuran
 - Backend compile check passes (`python3 -m compileall backend/app scripts`)
 - Frontend build passes (`npm run build`)
 - Frontend typecheck passes (`npm run typecheck`)
+- CI warning/regression fixes landed for startup lifecycle deprecation, raw-request-body test warning, and scoring saturation edge case
 - Manual prototype flow verified: fetch, save, note, saved view rendering
 - Post-hardening frontend checks pass after queue-sync updates (`npm run typecheck`, `npm run build`)
 
@@ -214,7 +217,7 @@ Close all P0 security risks. Establish baseline hardening across auth, data acce
 
 ### Phase 3 — Classification, Scoring, and Score Explanation
 
-**Status: In progress — explanation text + one-time tooltip + v2 shadow scaffolding implemented; evidence/sign-off and cutover gate missing**
+**Status: In progress — explanation text + one-time tooltip + v2 shadow + quality improvements implemented; evidence/sign-off and cutover gate missing**
 
 **Scope:**
 Validate scoring quality on real data and complete the score explanation display in the UI. Vertical profiles are documented but the config path is deferred — do not build a multi-profile config system for MVP.
@@ -223,6 +226,7 @@ Validate scoring quality on real data and complete the score explanation display
 - Five-route scoring validation run on real metro data; outcomes documented in the evidence log (`docs/PHASE1_4_VALIDATION.md` for now)
 - `insurance_class = 'Other'` / `'Unknown'` rate measured and <= 35% for launch metro (sample size >= 500 classified businesses)
 - v2 shadow scoring comparison artifact for 5 routes (rank deltas, top-k overlap, proxy save/contacted lift), with `v1` as default until launch gate passes
+- v2 quality calibration enhancements shipped (non-breaking): geo-aware priors, validation quality penalties, weak-name penalties, adaptive feedback weighting by evidence volume
 - Explicit v2 launch gate documented and satisfied before default cutover:
   - top-20 save-rate uplift over v1
   - top-20 contacted-rate uplift over v1
@@ -604,7 +608,7 @@ MVP is complete when all are true:
 | 0 | Baseline reliability | In progress | Medium |
 | 1 | Data/routing foundation evidence | Mostly done | Medium |
 | 2 | Security lockdown | In progress (P0 + key P1 code landed) | Medium |
-| 3 | Scoring + score explanation | In progress (tooltip landed; evidence incomplete) | Medium |
+| 3 | Scoring + score explanation | In progress (v2 shadow + quality pass landed; evidence incomplete) | Medium |
 | 4 | Discovery UX + workflow completion | In progress (dedup/onboarding landed; verification incomplete) | Medium |
 | 5 | Lead validation system | Feature complete — evidence sign-off remaining | High |
 | 6 | Dataset expansion | In progress — OSM enrichment deployed, Overpass tuning needed | Medium |
