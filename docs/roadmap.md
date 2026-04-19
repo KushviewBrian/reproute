@@ -1,6 +1,6 @@
 # RepRoute Master Roadmap
 
-Updated: April 18, 2026 (Phase 5 UI complete and deployed to production; validation trigger, badges, evidence drawer, and per-field chips live)
+Updated: April 19, 2026 (Phase 6 OSM selective enrichment implemented and deployed; map reinitialization regression fixed)
 
 ## Purpose
 
@@ -46,6 +46,8 @@ RepRoute is a route-aware field sales prospecting platform for B2B reps. Insuran
 - One-time score explanation tooltip behavior on first score interaction
 - Ingestion scripts (`scripts/ingest_overture.py`) and scoring validation scripts
 - Phase 5 complete: validation/expansion schema, all API endpoints, validation engine, CF Worker cron, and full UI (badges, evidence drawer, per-field chips, pin/unpin, "Validate now" trigger with polling)
+- Phase 6 OSM enrichment implemented: migration 0005 (osm_phone, osm_website, osm_enriched_at), Overpass fetch service, enrichment quota counters (Redis, separate from validation), 30-day freshness gate, column-level merge, background enrichment on lead save and route load (per-business sessions, Redis dedup lock), POST /leads/{id}/enrich endpoint
+- Map reinitialization regression fixed: MapPanel now uses a ref for onSelectLead instead of depending on it in the init effect, preventing the map from being torn down on every App render
 - Security hardening (partial): request body limit, backend security headers, extended rate limits, Cloudflare Pages `_headers`
 - Security middleware test scaffolding added (`backend/tests/test_security_middleware.py`)
 - Structured audit logging added for mutation/admin/auth-denial events (middleware-based)
@@ -73,7 +75,7 @@ RepRoute is a route-aware field sales prospecting platform for B2B reps. Insuran
 - Security P1 verification and CI/security operations tasks are still incomplete (see Phase 2); `VALIDATION_HMAC_SECRET` startup guard now closed
 - Backend security test coverage expanded further (startup HMAC secret + CORS regex compile checks, explicit cross-user validation denial); CI/runtime evidence sign-off still open
 - Phase 5 evidence sign-off still open (10+ sample runs with correct outcomes required before gate can close)
-- Dataset enrichment not implemented (see Phase 6)
+- Phase 6 OSM enrichment deployed; Overpass public endpoint timing out on Render — set OVERPASS_TIMEOUT_SECONDS and OVERPASS_ENDPOINT env vars to tune; evidence sign-off pending once enrichment hits confirm
 - Scoring calibration evidence is incomplete (5-route evidence + `Other/Unknown` threshold sign-off) (see Phase 3)
 - Evidence capture for ingestion QA and scoring validation is incomplete (see Phase 1)
 - Production DB TLS connectivity is restored using CA-chain PEM configuration; remaining work is to document and regression-test this deployment path so it stays stable
@@ -594,7 +596,7 @@ MVP is complete when all are true:
 | 3 | Scoring + score explanation | In progress (tooltip landed; evidence incomplete) | Medium |
 | 4 | Discovery UX + workflow completion | In progress (dedup/onboarding landed; verification incomplete) | Medium |
 | 5 | Lead validation system | Feature complete — evidence sign-off remaining | High |
-| 6 | Dataset expansion | Not started | Low |
+| 6 | Dataset expansion | In progress — OSM enrichment deployed, Overpass tuning needed | Medium |
 | 7 | Operations hardening | Partial | Low |
 | 8 | MVP verification and QA | Not started | Low |
 | 9 | Pilot and launch | Not started | Low |
@@ -609,7 +611,8 @@ MVP is complete when all are true:
 4. **Close remaining Phase 1 evidence** — replace EXPLAIN placeholder and commit one ingestion QA artifact with route IDs, commands, and p95 context in `docs/evidence/`.
 5. **Close Phase 3/4 verification evidence** — commit 5-route scoring artifact (`Other/Unknown` rate), offline reconnect no-loss proof (notes + status), dedup spot-check, and Today dashboard correctness checks.
 6. **Close Phase 5 evidence sign-off** — run 10+ validation jobs on real saved leads, verify correct state/confidence outcomes for website and phone fields, commit results to evidence log.
-7. **Use gate closeout workflow for each merge/deploy** — attach `docs/GATE_CLOSEOUT_TEMPLATE.md` entries with rollback notes and artifact links before marking any gate complete.
+7. **Tune Phase 6 Overpass connectivity** — set `OVERPASS_TIMEOUT_SECONDS=15` and try alternate endpoint (`overpass.kumi.systems`) via Render env vars; confirm enrichment hits appear in logs and osm_* columns populate in Supabase.
+8. **Use gate closeout workflow for each merge/deploy** — attach `docs/GATE_CLOSEOUT_TEMPLATE.md` entries with rollback notes and artifact links before marking any gate complete.
 
 ---
 
