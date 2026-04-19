@@ -160,11 +160,17 @@ export function App({ token, refreshToken }: AppProps) {
           hasWebsite,
           insuranceClass: insuranceClass ? [insuranceClass] : undefined,
           limit: 100,
+          scoreVersion: "v2",
         });
         const sorted = sortLeads(data.leads, sortBy);
         setLeads(sorted);
         cacheRouteLeads(id, sorted);
-        setCacheMeta(null);
+        const hasV2 = sorted.some((lead) => lead.score_version === "v2");
+        setCacheMeta(
+          hasV2
+            ? null
+            : "Using v1 fallback for this route. Recreate or refresh route candidates to populate v2 scores.",
+        );
         if (token) {
           Promise.allSettled(
             sorted.map((l) =>
