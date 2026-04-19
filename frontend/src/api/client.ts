@@ -86,6 +86,8 @@ export type Lead = {
   actionability_score: number;
   distance_from_route_m: number;
   explanation: { fit: string; distance: string; actionability: string };
+  score_version?: "v1" | "v2";
+  rank_reason_v2?: string[] | null;
   lat?: number | null;
   lng?: number | null;
 };
@@ -144,13 +146,21 @@ export async function patchRoute(routeId: string, corridorWidthMeters: number, t
 export async function fetchLeads(
   routeId: string,
   token?: string,
-  opts?: { minScore?: number; hasPhone?: boolean; hasWebsite?: boolean; insuranceClass?: string[]; limit?: number },
+  opts?: {
+    minScore?: number;
+    hasPhone?: boolean;
+    hasWebsite?: boolean;
+    insuranceClass?: string[];
+    limit?: number;
+    scoreVersion?: "v1" | "v2";
+  },
 ) {
   const params = new URLSearchParams();
   params.set("min_score", String(opts?.minScore ?? 40));
   params.set("limit", String(opts?.limit ?? 50));
   if (opts?.hasPhone !== undefined) params.set("has_phone", String(opts.hasPhone));
   if (opts?.hasWebsite !== undefined) params.set("has_website", String(opts.hasWebsite));
+  if (opts?.scoreVersion) params.set("score_version", opts.scoreVersion);
   (opts?.insuranceClass ?? []).forEach((c) => params.append("insurance_class", c));
 
   return req<{ route_id: string; leads: Lead[]; total: number; filtered: number }>(

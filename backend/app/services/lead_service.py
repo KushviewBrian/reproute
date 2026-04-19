@@ -5,13 +5,15 @@ import re
 from difflib import SequenceMatcher
 from uuid import UUID
 
-from sqlalchemy import delete, func, insert, literal_column, select
+from sqlalchemy import case, delete, func, insert, literal_column, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.models.lead_score import LeadScore
 from app.models.route_candidate import RouteCandidate
 from app.services.business_search_service import find_candidates
-from app.services.scoring_service import score_candidate
+from app.services.scoring_feedback_service import load_feedback_priors
+from app.services.scoring_service import score_candidate, score_candidate_v2
 
 
 def _normalize_name(name: str | None) -> str:
@@ -76,10 +78,27 @@ async def refresh_route_candidates_and_scores(db: AsyncSession, route_id: UUID, 
 
     route_candidate_rows = []
     lead_score_rows = []
+    settings = get_settings()
+    compute_v2 = bool(settings.scoring_v2_shadow_enabled or settings.scoring_v2_enabled)
+    priors = {"segments": {}, "global": {"prior_save": 0.20, "prior_contact": 0.08, "sample_size": 0}}
+    if compute_v2:
+        priors = await load_feedback_priors(
+            db,
+            calibration_version=settings.scoring_feedback_calibration_version,
+        )
 
     for row in candidates:
         business_id = row["id"]
         scoring = score_candidate(row)
+        scoring_v2 = None
+        if compute_v2:
+            scoring_v2 = score_candidate_v2(
+                row,
+                priors=priors,
+                smoothing=settings.scoring_feedback_smoothing,
+                min_segment_samples=settings.scoring_feedback_min_segment_samples,
+                calibration_version=settings.scoring_feedback_calibration_version,
+            )
 
         route_candidate_rows.append(
             {
@@ -98,7 +117,14 @@ async def refresh_route_candidates_and_scores(db: AsyncSession, route_id: UUID, 
                 "actionability_score": scoring["actionability_score"],
                 "final_score": scoring["final_score"],
                 "score_version": "v1",
+                "fit_score_v2": scoring_v2["fit_score_v2"] if scoring_v2 else None,
+                "distance_score_v2": scoring_v2["distance_score_v2"] if scoring_v2 else None,
+                "actionability_score_v2": scoring_v2["actionability_score_v2"] if scoring_v2 else None,
+                "feedback_score_v2": scoring_v2["feedback_score_v2"] if scoring_v2 else None,
+                "final_score_v2": scoring_v2["final_score_v2"] if scoring_v2 else None,
+                "calibration_version": scoring_v2["calibration_version"] if scoring_v2 else None,
                 "score_explanation_json": scoring["explanation"],
+                "score_explanation_v2_json": scoring_v2["explanation_v2"] if scoring_v2 else None,
             }
         )
 
@@ -115,9 +141,18 @@ async def fetch_leads(
     has_phone: bool | None = None,
     has_website: bool | None = None,
     insurance_classes: list[str] | None = None,
+    requested_score_version: str | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> tuple[list[dict], int, int]:
+    score_version = resolve_score_version(requested_score_version)
+    use_v2 = score_version == "v2"
+    effective_final_expr = (
+        func.coalesce(LeadScore.final_score_v2, LeadScore.final_score)
+        if use_v2
+        else LeadScore.final_score
+    )
+
     base_query = (
         select(
             LeadScore.business_id,
@@ -125,7 +160,14 @@ async def fetch_leads(
             LeadScore.distance_score,
             LeadScore.actionability_score,
             LeadScore.final_score,
+            LeadScore.fit_score_v2,
+            LeadScore.distance_score_v2,
+            LeadScore.actionability_score_v2,
+            LeadScore.feedback_score_v2,
+            LeadScore.final_score_v2,
+            LeadScore.calibration_version,
             LeadScore.score_explanation_json,
+            LeadScore.score_explanation_v2_json,
             RouteCandidate.distance_from_route_m,
         )
         .join(RouteCandidate, (RouteCandidate.route_id == LeadScore.route_id) & (RouteCandidate.business_id == LeadScore.business_id))
@@ -136,7 +178,7 @@ async def fetch_leads(
 
     base_query = base_query.join(Business, Business.id == LeadScore.business_id)
 
-    filters = [LeadScore.final_score >= min_score]
+    filters = [effective_final_expr >= min_score]
     if has_phone is not None:
         filters.append(Business.has_phone.is_(has_phone))
     if has_website is not None:
@@ -161,13 +203,24 @@ async def fetch_leads(
             LeadScore.fit_score,
             LeadScore.distance_score,
             LeadScore.actionability_score,
+            LeadScore.fit_score_v2,
+            LeadScore.distance_score_v2,
+            LeadScore.actionability_score_v2,
+            LeadScore.feedback_score_v2,
+            LeadScore.final_score_v2,
+            LeadScore.calibration_version,
             LeadScore.score_explanation_json,
+            LeadScore.score_explanation_v2_json,
             RouteCandidate.distance_from_route_m,
+            case(
+                (LeadScore.final_score_v2.is_not(None), literal_column("'v2'")),
+                else_=literal_column("'v1'"),
+            ).label("effective_score_version"),
         )
         .join(LeadScore, LeadScore.business_id == Business.id)
         .join(RouteCandidate, (RouteCandidate.route_id == LeadScore.route_id) & (RouteCandidate.business_id == LeadScore.business_id))
         .where(LeadScore.route_id == route_id, *filters)
-        .order_by(LeadScore.final_score.desc())
+        .order_by(effective_final_expr.desc())
         .limit(limit)
         .offset(offset)
     )
@@ -185,6 +238,20 @@ async def fetch_leads(
 
     lead_rows: list[dict] = []
     for row in rows:
+        raw_explanation = (
+            row["score_explanation_v2_json"]
+            if use_v2 and row["score_explanation_v2_json"] is not None
+            else row["score_explanation_json"]
+        ) or {}
+        explanation = {
+            "fit": raw_explanation.get("fit") or "Fit unavailable",
+            "distance": raw_explanation.get("distance") or "Distance unavailable",
+            "actionability": raw_explanation.get("actionability") or "Actionability unavailable",
+        }
+        rank_reason_v2 = raw_explanation.get("rank_reason_v2")
+        if not isinstance(rank_reason_v2, list):
+            rank_reason_v2 = None
+
         lead_rows.append(
             {
                 "business_id": row["id"],
@@ -193,12 +260,26 @@ async def fetch_leads(
                 "address": ", ".join([p for p in [row["address_line1"], row["city"]] if p]) or None,
                 "phone": row["phone"],
                 "website": row["website"],
-                "final_score": row["final_score"],
-                "fit_score": row["fit_score"],
-                "distance_score": row["distance_score"],
-                "actionability_score": row["actionability_score"],
+                "final_score": (
+                    row["final_score_v2"] if use_v2 and row["final_score_v2"] is not None else row["final_score"]
+                ),
+                "fit_score": (
+                    row["fit_score_v2"] if use_v2 and row["fit_score_v2"] is not None else row["fit_score"]
+                ),
+                "distance_score": (
+                    row["distance_score_v2"] if use_v2 and row["distance_score_v2"] is not None else row["distance_score"]
+                ),
+                "actionability_score": (
+                    row["actionability_score_v2"]
+                    if use_v2 and row["actionability_score_v2"] is not None
+                    else row["actionability_score"]
+                ),
                 "distance_from_route_m": float(row["distance_from_route_m"]),
-                "explanation": row["score_explanation_json"],
+                "explanation": explanation,
+                "score_version": (
+                    row["effective_score_version"] if use_v2 else "v1"
+                ),
+                "rank_reason_v2": rank_reason_v2 if use_v2 else None,
                 "lat": float(row["lat"]) if row["lat"] is not None else None,
                 "lng": float(row["lng"]) if row["lng"] is not None else None,
             }
@@ -206,3 +287,25 @@ async def fetch_leads(
 
     lead_rows = _dedupe_leads(lead_rows)
     return lead_rows, int(total or 0), int(filtered or 0)
+
+
+def resolve_score_version(requested_score_version: str | None) -> str:
+    settings = get_settings()
+    forced = settings.scoring_force_version.strip().lower()
+    if forced in {"v1", "v2"}:
+        if forced == "v2" and not settings.scoring_v2_enabled:
+            return "v1"
+        return forced
+
+    requested = (requested_score_version or "").strip().lower()
+    if requested == "v2":
+        if settings.scoring_v2_enabled or settings.scoring_v2_shadow_enabled:
+            return "v2"
+        return "v1"
+    if requested == "v1":
+        return "v1"
+
+    default = settings.scoring_default_version.strip().lower()
+    if default == "v2" and settings.scoring_v2_enabled:
+        return "v2"
+    return "v1"

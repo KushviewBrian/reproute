@@ -8,7 +8,7 @@ from sqlalchemy import engine_from_config, pool
 
 from app.core.config import get_settings
 from app.db.base import Base
-from app.models import business, import_job, lead_score, note, route, route_candidate, saved_lead, user
+from app.models import business, import_job, lead_score, note, route, route_candidate, saved_lead, scoring_feedback_prior, user
 
 config = context.config
 if config.config_file_name is not None:

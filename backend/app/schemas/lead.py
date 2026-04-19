@@ -22,6 +22,8 @@ class LeadItem(BaseModel):
     actionability_score: int
     distance_from_route_m: float
     explanation: LeadExplanation
+    score_version: str | None = None
+    rank_reason_v2: list[str] | None = None
     lat: float | None = None
     lng: float | None = None
 

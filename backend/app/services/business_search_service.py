@@ -17,13 +17,24 @@ CANDIDATE_QUERY = text(
       b.phone,
       b.website,
       b.confidence_score,
+      b.last_seen_at,
       b.has_phone,
       b.has_website,
       b.has_address,
+      lv.validation_confidence,
+      lv.validation_last_checked_at,
       ST_Y(b.geom::geometry) AS lat,
       ST_X(b.geom::geometry) AS lng,
       ST_Distance(b.geom::geography, r.route_geom::geography) AS distance_from_route_m
     FROM business b
+    LEFT JOIN (
+      SELECT
+        business_id,
+        AVG(confidence) AS validation_confidence,
+        MAX(last_checked_at) AS validation_last_checked_at
+      FROM lead_field_validation
+      GROUP BY business_id
+    ) lv ON lv.business_id = b.id
     CROSS JOIN route r
     WHERE r.id = :route_id
       AND COALESCE(b.insurance_class, '') != 'Exclude'

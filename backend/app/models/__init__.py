@@ -8,6 +8,7 @@ from app.models.note import Note
 from app.models.route import Route
 from app.models.route_candidate import RouteCandidate
 from app.models.saved_lead import SavedLead
+from app.models.scoring_feedback_prior import ScoringFeedbackPrior
 from app.models.user import User
 
 __all__ = [
@@ -20,6 +21,7 @@ __all__ = [
     "Route",
     "RouteCandidate",
     "LeadScore",
+    "ScoringFeedbackPrior",
     "SavedLead",
     "Note",
 ]

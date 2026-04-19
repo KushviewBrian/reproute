@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import math
+from datetime import datetime, timezone
+
 
 FIT_SCORES = {
     "Auto Service": 95,
@@ -15,6 +18,18 @@ FIT_SCORES = {
 }
 
 
+def clamp_score(value: float) -> int:
+    return max(0, min(int(round(value)), 100))
+
+
+def distance_band(meters: float) -> str:
+    if meters <= 750:
+        return "near"
+    if meters <= 1500:
+        return "mid"
+    return "far"
+
+
 def distance_score(meters: float) -> int:
     if meters <= 250:
         return 100
@@ -25,6 +40,11 @@ def distance_score(meters: float) -> int:
     if meters <= 3000:
         return 35
     return 10
+
+
+def distance_score_v2(meters: float) -> int:
+    # Smooth exponential decay to avoid bucket cliffs.
+    return clamp_score(100 * math.exp(-meters / 1400.0))
 
 
 def actionability_score(has_address: bool, has_phone: bool, has_website: bool, confidence: float | None) -> int:
@@ -38,6 +58,48 @@ def actionability_score(has_address: bool, has_phone: bool, has_website: bool, c
     if confidence is not None and confidence < 0.7:
         base = int(base * max(confidence, 0.5))
     return min(base, 100)
+
+
+def actionability_score_v2(
+    *,
+    has_address: bool,
+    has_phone: bool,
+    has_website: bool,
+    confidence: float | None,
+    validation_confidence: float | None,
+    last_seen_at: datetime | None,
+) -> int:
+    score = 20.0
+    if has_address:
+        score += 25
+    if has_phone:
+        score += 20
+    if has_website:
+        score += 20
+    if confidence is not None:
+        score += 15 * max(min(confidence, 1.0), 0.0)
+    if validation_confidence is not None:
+        score += 20 * max(min(validation_confidence / 100.0, 1.0), 0.0)
+    if last_seen_at:
+        age_days = max((datetime.now(timezone.utc) - last_seen_at).days, 0)
+        freshness = max(0.5, 1.0 - (age_days / 180.0))
+        score *= freshness
+    return clamp_score(score)
+
+
+def fit_score_v2(
+    insurance_class: str | None,
+    confidence: float | None,
+    validation_confidence: float | None,
+) -> int:
+    base = float(FIT_SCORES.get(insurance_class or "Other Commercial", 40))
+    if insurance_class == "Exclude":
+        return 0
+    if confidence is not None:
+        base = base * (0.85 + (0.15 * max(min(confidence, 1.0), 0.0)))
+    if validation_confidence is not None:
+        base = base * (0.9 + 0.1 * max(min(validation_confidence / 100.0, 1.0), 0.0))
+    return clamp_score(base)
 
 
 def explain(insurance_class: str | None, fit: int, distance_m: float, has_phone: bool, has_website: bool) -> dict:
@@ -58,6 +120,37 @@ def explain(insurance_class: str | None, fit: int, distance_m: float, has_phone:
         "distance": f"{distance_label} ({int(distance_m)}m from route)",
         "actionability": actionability,
     }
+
+
+def feedback_score_v2(
+    *,
+    insurance_class: str | None,
+    has_phone: bool,
+    has_website: bool,
+    distance_m: float,
+    priors: dict,
+    smoothing: int,
+    min_samples: int,
+) -> int:
+    band = distance_band(distance_m)
+    segment_key = (insurance_class, has_phone, has_website, band)
+    segment = priors.get("segments", {}).get(segment_key)
+    global_prior = priors.get("global", {"prior_save": 0.20, "prior_contact": 0.08, "sample_size": 0})
+
+    if not segment or int(segment.get("sample_size", 0)) < min_samples:
+        blended_save = float(global_prior.get("prior_save", 0.20))
+        blended_contact = float(global_prior.get("prior_contact", 0.08))
+    else:
+        n = int(segment.get("sample_size", 0))
+        k = max(int(smoothing), 1)
+        seg_save = float(segment.get("prior_save", global_prior.get("prior_save", 0.20)))
+        seg_contact = float(segment.get("prior_contact", global_prior.get("prior_contact", 0.08)))
+        g_save = float(global_prior.get("prior_save", 0.20))
+        g_contact = float(global_prior.get("prior_contact", 0.08))
+        blended_save = ((n * seg_save) + (k * g_save)) / (n + k)
+        blended_contact = ((n * seg_contact) + (k * g_contact)) / (n + k)
+
+    return clamp_score(((blended_save * 0.6) + (blended_contact * 0.4)) * 100.0)
 
 
 def score_candidate(candidate: dict) -> dict:
@@ -82,4 +175,75 @@ def score_candidate(candidate: dict) -> dict:
             has_phone=bool(candidate.get("has_phone")),
             has_website=bool(candidate.get("has_website")),
         ),
+    }
+
+
+def score_candidate_v2(
+    candidate: dict,
+    *,
+    priors: dict,
+    smoothing: int,
+    min_segment_samples: int,
+    calibration_version: str,
+) -> dict:
+    confidence = float(candidate["confidence_score"]) if candidate.get("confidence_score") is not None else None
+    validation_confidence = (
+        float(candidate["validation_confidence"]) if candidate.get("validation_confidence") is not None else None
+    )
+    distance_m = float(candidate["distance_from_route_m"])
+    fit = fit_score_v2(
+        insurance_class=candidate.get("insurance_class"),
+        confidence=confidence,
+        validation_confidence=validation_confidence,
+    )
+    dist = distance_score_v2(distance_m)
+    act = actionability_score_v2(
+        has_address=bool(candidate.get("has_address")),
+        has_phone=bool(candidate.get("has_phone")),
+        has_website=bool(candidate.get("has_website")),
+        confidence=confidence,
+        validation_confidence=validation_confidence,
+        last_seen_at=candidate.get("last_seen_at"),
+    )
+    feedback = feedback_score_v2(
+        insurance_class=candidate.get("insurance_class"),
+        has_phone=bool(candidate.get("has_phone")),
+        has_website=bool(candidate.get("has_website")),
+        distance_m=distance_m,
+        priors=priors,
+        smoothing=smoothing,
+        min_samples=min_segment_samples,
+    )
+    final = clamp_score((fit * 0.35) + (dist * 0.25) + (act * 0.25) + (feedback * 0.15))
+
+    rank_reasons: list[str] = []
+    if fit >= 80:
+        rank_reasons.append("Strong class fit")
+    if dist >= 70:
+        rank_reasons.append("Close to route")
+    if act >= 70:
+        rank_reasons.append("High contactability")
+    if feedback >= 65:
+        rank_reasons.append("Historically strong outcomes for similar leads")
+
+    explanation = explain(
+        insurance_class=candidate.get("insurance_class"),
+        fit=fit,
+        distance_m=distance_m,
+        has_phone=bool(candidate.get("has_phone")),
+        has_website=bool(candidate.get("has_website")),
+    )
+    explanation["actionability"] = f"{explanation['actionability']} (v2 calibrated)"
+
+    return {
+        "fit_score_v2": fit,
+        "distance_score_v2": dist,
+        "actionability_score_v2": act,
+        "feedback_score_v2": feedback,
+        "final_score_v2": final,
+        "calibration_version": calibration_version,
+        "explanation_v2": {
+            **explanation,
+            "rank_reason_v2": rank_reasons,
+        },
     }

@@ -32,6 +32,13 @@ class Settings(BaseSettings):
     ors_api_key: str = ""
     ors_base_url: str = "https://api.openrouteservice.org"
     route_cache_ttl_seconds: int = 86400
+    scoring_default_version: str = "v1"
+    scoring_force_version: str = ""
+    scoring_v2_enabled: bool = False
+    scoring_v2_shadow_enabled: bool = True
+    scoring_feedback_calibration_version: str = "v2-default"
+    scoring_feedback_smoothing: int = 20
+    scoring_feedback_min_segment_samples: int = 25
     ingest_database_url: str = ""
     admin_import_secret: str = ""
     admin_allowed_emails: str = ""

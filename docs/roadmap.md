@@ -1,6 +1,6 @@
 # RepRoute Master Roadmap
 
-Updated: April 19, 2026 (Phase 6 OSM selective enrichment implemented and deployed; map reinitialization regression fixed)
+Updated: April 19, 2026 (offline queue global flush hardening + scoring v2 shadow scaffolding + roadmap/evidence rebaseline)
 
 ## Purpose
 
@@ -36,6 +36,7 @@ RepRoute is a route-aware field sales prospecting platform for B2B reps. Insuran
 
 - Route creation and lead retrieval pipeline (end-to-end)
 - Classification and scoring (rule-based, insurance-tuned)
+- Hybrid scoring v2 shadow scaffolding: deterministic calibrated components, additive feedback priors, dual-compute storage, and score-version gating (`v1` default)
 - Discovery UI: route, list/map, detail, saved views
 - Save lead, status changes, notes, per-route CSV export
 - Today dashboard (initial), follow-up date fields (initial), and cross-route saved-leads CSV export
@@ -61,6 +62,8 @@ RepRoute is a route-aware field sales prospecting platform for B2B reps. Insuran
 - Phase 2 test coverage: startup tests added for missing HMAC secret and invalid CORS regex; cross-user validation access denial explicitly tested (trigger + read endpoints)
 - Phase 1 stale-record observability: ingest script now logs `stale_record_update` line with `refresh_started_at` timestamp and row count immediately after marking — provides per-refresh audit trail in CI/ops logs
 - Phase 5 backend runtime complete: pin/unpin endpoint (`PATCH /leads/{id}/validation/{field_name}`), retention pruner (`POST /admin/validation/prune`), inter-fetch jitter (500ms–2000ms), pinned-field skip in `process_run_by_id`, CF Worker cron (`infra/validation-cron.js` + `wrangler.validation-cron.toml`), full unit/route test coverage; HMAC startup guard active in production
+- Offline sync hardening complete: app-level queue flushing now runs on token availability/online/interval, queue-count state is event-driven across views, and duplicate concurrent queue flushes are guarded in `offlineQueue.ts`
+- Session evidence and gate closeout artifacts added under `docs/evidence/` (`session_roadmap_closure_2026-04-19.md`, `gate_closeout_2026-04-19.md`)
 
 ### Confirmed by recent checks
 
@@ -68,6 +71,7 @@ RepRoute is a route-aware field sales prospecting platform for B2B reps. Insuran
 - Frontend build passes (`npm run build`)
 - Frontend typecheck passes (`npm run typecheck`)
 - Manual prototype flow verified: fetch, save, note, saved view rendering
+- Post-hardening frontend checks pass after queue-sync updates (`npm run typecheck`, `npm run build`)
 
 ### Confirmed open gaps (must close before pilot)
 
@@ -77,7 +81,9 @@ RepRoute is a route-aware field sales prospecting platform for B2B reps. Insuran
 - Phase 5 evidence sign-off still open (10+ sample runs with correct outcomes required before gate can close)
 - Phase 6 OSM enrichment deployed; Overpass public endpoint timing out on Render — set OVERPASS_TIMEOUT_SECONDS and OVERPASS_ENDPOINT env vars to tune; evidence sign-off pending once enrichment hits confirm
 - Scoring calibration evidence is incomplete (5-route evidence + `Other/Unknown` threshold sign-off) (see Phase 3)
+- Scoring v2 shadow evidence/cutover gate is open (top-20 save/contacted uplift + latency guardrails not yet evidenced) (see Phase 3)
 - Evidence capture for ingestion QA and scoring validation is incomplete (see Phase 1)
+- Staging-backed evidence execution remains blocked in local session without staging runtime inputs (`INGEST_DATABASE_URL`, staging bearer token + route IDs) and script runtime dependency installation for EXPLAIN capture
 - Production DB TLS connectivity is restored using CA-chain PEM configuration; remaining work is to document and regression-test this deployment path so it stays stable
 - Branch protection, uptime monitoring, and log forwarding remain external platform tasks not yet evidenced in repo
 
@@ -208,7 +214,7 @@ Close all P0 security risks. Establish baseline hardening across auth, data acce
 
 ### Phase 3 — Classification, Scoring, and Score Explanation
 
-**Status: In progress — explanation text + one-time tooltip implemented; calibration evidence/sign-off missing**
+**Status: In progress — explanation text + one-time tooltip + v2 shadow scaffolding implemented; evidence/sign-off and cutover gate missing**
 
 **Scope:**
 Validate scoring quality on real data and complete the score explanation display in the UI. Vertical profiles are documented but the config path is deferred — do not build a multi-profile config system for MVP.
@@ -216,6 +222,11 @@ Validate scoring quality on real data and complete the score explanation display
 **Deliverables:**
 - Five-route scoring validation run on real metro data; outcomes documented in the evidence log (`docs/PHASE1_4_VALIDATION.md` for now)
 - `insurance_class = 'Other'` / `'Unknown'` rate measured and <= 35% for launch metro (sample size >= 500 classified businesses)
+- v2 shadow scoring comparison artifact for 5 routes (rank deltas, top-k overlap, proxy save/contacted lift), with `v1` as default until launch gate passes
+- Explicit v2 launch gate documented and satisfied before default cutover:
+  - top-20 save-rate uplift over v1
+  - top-20 contacted-rate uplift over v1
+  - no p95 latency regression beyond threshold
 - Score explanation UI: lead card and lead detail must display three things in plain language in under 5 seconds (per `mvpoutline.md` §5.2):
   1. Why the business ranked high/low (fit + distance signal)
   2. What contact data is available (phone/website present or missing)

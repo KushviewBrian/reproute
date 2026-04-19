@@ -23,6 +23,7 @@ async def get_route_leads(
     has_phone: bool | None = None,
     has_website: bool | None = None,
     insurance_class: list[str] | None = Query(default=None),
+    score_version: str | None = Query(default=None, pattern="^(v1|v2)$"),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     user: User = Depends(get_current_user),
@@ -40,6 +41,7 @@ async def get_route_leads(
         has_phone=has_phone,
         has_website=has_website,
         insurance_classes=insurance_class,
+        requested_score_version=score_version,
         limit=limit,
         offset=offset,
     )
