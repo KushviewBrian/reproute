@@ -411,19 +411,20 @@ export function LeadDetail({ lead, routeId, token, refreshToken, onClose }: Prop
               )}
             </div>
           )}
-          {lead.owner_name && (
-            <div className="detail-info-row">
-              <span style={{ fontSize: "0.72rem", color: "var(--gray-600)" }}>
-                Owner: <strong>{lead.owner_name}</strong>
+          <div className="detail-info-row">
+            <span style={{ fontSize: "0.72rem", color: lead.owner_name ? "var(--gray-600)" : "var(--gray-400)" }}>
+              Owner:{" "}
+              {lead.owner_name ? (
+                <><strong>{lead.owner_name}</strong>
                 {lead.owner_name_source && lead.owner_name_source !== "manual" && (
                   <span style={{ marginLeft: "0.3rem", fontSize: "0.65rem", color: "var(--gray-400)" }}>via {lead.owner_name_source.replace(/_/g, " ")}</span>
                 )}
                 {lead.owner_name_confidence != null && (
                   <span style={{ marginLeft: "0.25rem", fontSize: "0.65rem", color: "var(--gray-400)" }}>{Math.round(lead.owner_name_confidence * 100)}%</span>
-                )}
-              </span>
-            </div>
-          )}
+                )}</>
+              ) : "Unknown"}
+            </span>
+          </div>
           {!lead.address && !lead.phone && !lead.website && (
             <p style={{ fontSize: "0.75rem", color: "var(--gray-400)" }}>No contact info available</p>
           )}
