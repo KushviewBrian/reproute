@@ -18,6 +18,22 @@ type AppProps = {
   refreshToken?: () => Promise<string | undefined>;
 };
 
+
+/**
+ * Converts any thrown API error into a human-readable, actionable message.
+ * Branches on the status prefix that client.ts embeds in every non-2xx error message.
+ */
+function toUserMessage(err: unknown, fallback: string): string {
+  const msg = err instanceof Error ? err.message : "";
+  if (!msg) return fallback;
+  if (msg.startsWith("401")) return "Your session has expired — please sign in again.";
+  if (msg.startsWith("429")) return "Too many requests — wait a moment and try again.";
+  if (msg.toLowerCase().startsWith("network error")) {
+    return "Network error — check your connection. Changes made offline will sync automatically when you reconnect.";
+  }
+  return msg;
+}
+
 function IconRoute() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -205,7 +221,7 @@ export function App({ token, refreshToken }: AppProps) {
     try {
       await loadLeads(id);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to fetch leads");
+      setError(toUserMessage(err, "Failed to fetch leads"));
     }
   }
 
@@ -213,7 +229,7 @@ export function App({ token, refreshToken }: AppProps) {
     try {
       await saveLead({ business_id: lead.business_id, route_id: routeId ?? undefined }, token);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save lead");
+      setError(toUserMessage(err, "Failed to save lead"));
     }
   }
 
@@ -233,9 +249,9 @@ export function App({ token, refreshToken }: AppProps) {
       setError(null);
     } catch (err) {
       if (savedOk) {
-        setError(err instanceof Error ? `Lead saved, but note failed: ${err.message}` : "Lead saved, but note failed");
+        setError("Lead saved, but note failed: " + toUserMessage(err, "unknown error"));
       } else {
-        setError(err instanceof Error ? `Failed to save lead: ${err.message}` : "Failed to save lead");
+        setError(toUserMessage(err, "Failed to save lead"));
       }
     }
   }
@@ -245,15 +261,19 @@ export function App({ token, refreshToken }: AppProps) {
     try {
       await loadLeads(routeId);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to apply filters");
+      setError(toUserMessage(err, "Failed to apply filters"));
     }
   }
 
   async function onCorridorChange(next: number) {
     setCorridor(next);
     if (!routeId) return;
-    await patchRoute(routeId, next, token);
-    await loadLeads(routeId);
+    try {
+      await patchRoute(routeId, next, token);
+      await loadLeads(routeId);
+    } catch (err) {
+      setError(toUserMessage(err, "Failed to update corridor"));
+    }
   }
 
   function onAddStop(lead: Lead) {

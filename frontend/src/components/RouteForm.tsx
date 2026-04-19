@@ -50,8 +50,19 @@ async function resolveAddress(text: string, token?: string): Promise<ResolvedLoc
   if (coordMatch) {
     return { label: trimmed, lat: parseFloat(coordMatch[1]), lng: parseFloat(coordMatch[2]) };
   }
-  const data = await geocode(trimmed, token);
-  if (!data.results.length) throw new Error(`No results for "${trimmed}"`);
+  let data: { results: ResolvedLocation[]; degraded: boolean };
+  try {
+    data = await geocode(trimmed, token);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "";
+    if (msg.toLowerCase().startsWith("network error")) {
+      throw new Error("Geocoding unavailable — check your connection and try again.");
+    }
+    throw new Error("Geocoding failed — try again in a moment.");
+  }
+  if (!data.results.length) {
+    throw new Error(`Couldn't find "${trimmed}" — try adding a city or zip code.`);
+  }
   return data.results[0];
 }
 
@@ -130,8 +141,13 @@ export function RouteForm({ token, corridor, waypoints, onWaypointsChange, onCre
           setLocating(false);
         }
       },
-      () => {
-        setError("Could not get current location");
+      (positionError) => {
+        const denied = positionError.code === positionError.PERMISSION_DENIED;
+        setError(
+          denied
+            ? "Location access denied — enable it in your browser settings, or type your address manually."
+            : "Couldn't get your current location — please enter your address manually.",
+        );
         setLocating(false);
       },
       { enableHighAccuracy: true, timeout: 8000 },
@@ -175,7 +191,14 @@ export function RouteForm({ token, corridor, waypoints, onWaypointsChange, onCre
       );
       onCreated({ routeId: created.route_id, routeGeoJson: created.route_geojson });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create route");
+      const msg = err instanceof Error ? err.message : "Failed to create route";
+      setError(
+        msg.startsWith("401")
+          ? "Your session has expired — please sign in again."
+          : msg.startsWith("429")
+          ? "Too many requests — wait a moment and try again."
+          : msg,
+      );
     } finally {
       setLoading(false);
     }

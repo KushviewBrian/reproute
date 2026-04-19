@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 
 import httpx
@@ -8,6 +9,12 @@ from app.core.config import get_settings
 from app.schemas.geocode import GeocodeResult
 
 logger = logging.getLogger(__name__)
+
+# Retry policy for Photon geocode upstream calls.
+# Transient errors (timeout, network, 5xx) are retried once before falling back
+# to the POC fallback so the user always gets a response.
+_GEOCODE_MAX_ATTEMPTS = 2
+_GEOCODE_RETRY_DELAY_SECONDS = 0.5
 
 
 def _poc_fallback(query: str) -> list[GeocodeResult]:
@@ -23,11 +30,65 @@ def _poc_fallback(query: str) -> list[GeocodeResult]:
     return [GeocodeResult(label=query, lat=39.7683331, lng=-86.1583502, bbox=None)]
 
 
+def _is_transient_geocode_error(exc: BaseException) -> bool:
+    """Return True for errors that are safe to retry against Photon."""
+    if isinstance(exc, (httpx.TimeoutException, httpx.ConnectError, httpx.RemoteProtocolError)):
+        return True
+    if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code >= 500:
+        return True
+    return False
+
+
+async def _fetch_geocode(url: str, params: dict, timeout: int) -> dict:
+    """
+    Fetch geocode results from Photon with up to _GEOCODE_MAX_ATTEMPTS attempts.
+
+    - Transient errors are retried after _GEOCODE_RETRY_DELAY_SECONDS.
+    - 4xx errors are terminal and raised immediately.
+    - Raises the last exception when all attempts are exhausted.
+    """
+    last_exc: BaseException | None = None
+    for attempt in range(1, _GEOCODE_MAX_ATTEMPTS + 1):
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                resp = await client.get(url, params=params)
+                resp.raise_for_status()
+                return resp.json()
+        except BaseException as exc:
+            last_exc = exc
+            if not _is_transient_geocode_error(exc):
+                raise
+            if attempt < _GEOCODE_MAX_ATTEMPTS:
+                logger.warning(
+                    "geocode_retry attempt=%d/%d error=%r url=%s",
+                    attempt,
+                    _GEOCODE_MAX_ATTEMPTS,
+                    exc,
+                    url,
+                )
+                await asyncio.sleep(_GEOCODE_RETRY_DELAY_SECONDS)
+            else:
+                logger.critical(
+                    "geocode_degraded_fallback attempts_exhausted=%d error=%r url=%s",
+                    _GEOCODE_MAX_ATTEMPTS,
+                    exc,
+                    url,
+                )
+    assert last_exc is not None
+    raise last_exc
+
+
 async def geocode(
     query: str | None = None,
     lat: float | None = None,
     lng: float | None = None,
 ) -> tuple[list[GeocodeResult], bool]:
+    """
+    Geocode a query string or reverse-geocode (lat, lng).
+
+    Returns (results, degraded).  degraded=True means the Photon upstream was
+    unavailable and results came from the built-in POC fallback.
+    """
     settings = get_settings()
 
     if query is None and (lat is None or lng is None):
@@ -43,12 +104,17 @@ async def geocode(
         params["lon"] = lng
 
     try:
-        async with httpx.AsyncClient(timeout=settings.geocode_timeout_seconds) as client:
-            resp = await client.get(settings.geocode_worker_url, params=params)
-            resp.raise_for_status()
-            payload = resp.json()
+        payload = await _fetch_geocode(
+            settings.geocode_worker_url,
+            params,
+            settings.geocode_timeout_seconds,
+        )
     except Exception as exc:
-        logger.error("Geocode request failed url=%s error=%r", settings.geocode_worker_url, exc)
+        logger.error(
+            "geocode_all_attempts_failed url=%s error=%r — using POC fallback",
+            settings.geocode_worker_url,
+            exc,
+        )
         if query is not None:
             return _poc_fallback(query), True
         return [], True
@@ -71,5 +137,5 @@ async def geocode(
         bbox = feature.get("bbox")
         results.append(GeocodeResult(label=label, lat=float(coords[1]), lng=float(coords[0]), bbox=bbox))
 
-    logger.info("Geocode query=%r returned %d results degraded=False", query, len(results))
+    logger.info("geocode query=%r returned %d results degraded=False", query, len(results))
     return results, False

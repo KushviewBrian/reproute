@@ -1,4 +1,5 @@
 import logging
+import time
 from contextlib import asynccontextmanager
 from datetime import date
 
@@ -116,15 +117,18 @@ async def request_size_and_security_headers(request: Request, call_next):
         if content_length > settings.request_body_limit_bytes:
             response = JSONResponse(status_code=413, content={"detail": "Request body too large"})
             return _apply_security_headers(response)
+    t_start = time.monotonic()
     response = await call_next(request)
+    duration_ms = int((time.monotonic() - t_start) * 1000)
     response = _apply_security_headers(response)
     if _should_emit_audit_log(request.method, request.url.path, response.status_code):
         client_host = request.client.host if request.client else "unknown"
         logger.info(
-            "audit_event method=%s path=%s status=%s client=%s",
+            "audit_event method=%s path=%s status=%s duration_ms=%d client=%s",
             request.method,
             request.url.path,
             response.status_code,
+            duration_ms,
             client_host,
         )
     return response

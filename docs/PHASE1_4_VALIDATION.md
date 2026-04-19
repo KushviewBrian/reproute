@@ -86,6 +86,22 @@ Evidence links:
 - [ ] Dedup spot-check evidence documented.
 - [ ] Today dashboard section correctness evidence documented.
 
+### Phase 4 Code Tasks — Completed 2026-04-19
+
+- [x] 401/429/network errors produce actionable human-readable messages on all mutation surfaces
+  (`toUserMessage` helper wired into `App.tsx` — `onCreated`, `onSaveLead`, `onSaveLeadWithNote`, `onApplyFilters`, `onCorridorChange`).
+- [x] Geocode failure shows actionable copy: "Couldn't find X — try adding a city or zip code."
+- [x] GPS denial distinguishes permission-denied vs. unavailable with separate copy.
+- [x] Route submit catch passes geocode errors through cleanly (401/429 still mapped).
+
+### Phase 7 Code Tasks — Completed 2026-04-19
+
+- [x] ORS upstream: retry up to 2 attempts with 1s delay; graceful degraded straight-line fallback on
+  exhaustion. `properties.degraded=True` set on fallback features. 18 new unit tests green.
+- [x] Geocode upstream: retry up to 2 attempts with 0.5s delay; POC fallback on exhaustion.
+  Failure taxonomy: timeout/ConnectError/5xx → retry; 4xx → terminal.
+- [x] Audit middleware: `duration_ms` now included in every `audit_event` log line for p95 tracking.
+
 Evidence links:
 - Commit(s): `TODO`
 - CI run(s): `TODO`
