@@ -931,7 +931,7 @@ Full replacement of `app.css` design tokens and application chrome. Hand-rolled 
 - `Inter` and `JetBrains Mono` remain in stack; no removal
 
 **Clerk UserButton theming:**
-- Clerk v5 supports `appearance` prop on `<UserButton>` — set `appearance={{ baseTheme: undefined, variables: { colorBackground: 'var(--surface-1)', colorText: 'var(--text-primary)' } }}` to match dark chrome
+- Clerk v5 supports `appearance` prop on `<UserButton>` — set `appearance={ baseTheme: undefined, variables: { colorBackground: 'var(--surface-1)', colorText: 'var(--text-primary)' } }` to match dark chrome
 - This is the only Clerk-specific change; auth flow is untouched
 
 **PWA manifest update:**

@@ -51,8 +51,8 @@ Post-deploy smoke checks (required):
 4. In the **Claims** section, add:
    ```json
    {
-     "email": "{{user.primary_email_address}}",
-     "email_verified": "{{user.primary_email_address_verified}}"
+     "email": "<user.primary_email_address>",
+     "email_verified": "<user.primary_email_address_verified>"
    }
    ```
 5. Save the template
