@@ -1,0 +1,15 @@
+title: RepRoute Docs
+description: RepRoute project documentation site
+theme: jekyll-theme-primer
+markdown: kramdown
+
+exclude:
+  - backend/
+  - frontend/
+  - data/
+  - infra/
+  - scripts/
+  - .venv/
+  - .venv313/
+  - docs/drafts/
+  - node_modules/

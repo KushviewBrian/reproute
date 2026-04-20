@@ -48,6 +48,7 @@ class SavedLeadItem(BaseModel):
     insurance_class: str | None = None
     operating_status: str | None = None
     validation_state: str | None = None
+    saved_at: datetime | None = None
 
 
 class SavedLeadGroup(BaseModel):

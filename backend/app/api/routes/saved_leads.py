@@ -118,6 +118,7 @@ def _to_saved_lead_item(row, notes_by_business: dict) -> SavedLeadItem:
             if (hasattr(row, "avg_confidence") and row.avg_confidence is not None)
             else None
         ),
+        saved_at=row.SavedLead.created_at,
     )
 
 

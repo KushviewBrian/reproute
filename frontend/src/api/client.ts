@@ -130,6 +130,7 @@ export type SavedLead = {
   insurance_class: string | null;
   operating_status: string | null;
   validation_state?: string | null;
+  saved_at?: string | null;
 };
 
 export type SavedLeadsTodayResponse = {
@@ -167,6 +168,8 @@ export async function patchRoute(routeId: string, corridorWidthMeters: number, t
   }, token);
 }
 
+export type LeadGroup = { key: string; label: string; count: number; leads: Lead[] };
+
 export async function fetchLeads(
   routeId: string,
   token?: string,
@@ -178,13 +181,17 @@ export async function fetchLeads(
     limit?: number;
     scoreVersion?: "v1" | "v2";
     // Phase 10
-    sortBy?: "score" | "blue_collar_score" | "name" | "distance";
+    sortBy?: "score" | "blue_collar_score" | "name" | "distance" | "validation_confidence" | "owner_name";
     sortDir?: "asc" | "desc";
     blueCollar?: boolean;
     hasOwnerName?: boolean;
     hasEmployeeCount?: boolean;
     employeeCountBand?: string;
     scoreBand?: "high" | "medium" | "low";
+    minValidationConfidence?: number;
+    validationState?: string;
+    operatingStatus?: string;
+    groupBy?: string;
   },
 ) {
   const params = new URLSearchParams();
@@ -201,8 +208,12 @@ export async function fetchLeads(
   if (opts?.hasEmployeeCount !== undefined) params.set("has_employee_count", String(opts.hasEmployeeCount));
   if (opts?.employeeCountBand) params.set("employee_count_band", opts.employeeCountBand);
   if (opts?.scoreBand) params.set("score_band", opts.scoreBand);
+  if (opts?.minValidationConfidence != null) params.set("min_validation_confidence", String(opts.minValidationConfidence));
+  if (opts?.validationState) params.set("validation_state", opts.validationState);
+  if (opts?.operatingStatus) params.set("operating_status", opts.operatingStatus);
+  if (opts?.groupBy) params.set("group_by", opts.groupBy);
 
-  return req<{ route_id: string; leads: Lead[]; total: number; filtered: number }>(
+  return req<{ route_id: string; leads: Lead[]; total: number; filtered: number; groups?: LeadGroup[] }>(
     `/routes/${routeId}/leads?${params.toString()}`,
     {},
     token,

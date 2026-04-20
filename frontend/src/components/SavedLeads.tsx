@@ -48,7 +48,7 @@ function sortSavedLeads(items: SavedLead[], mode: SortMode = "due_date"): SavedL
   return [...items].sort((a, b) => {
     if (mode === "name") return (a.business_name ?? "").localeCompare(b.business_name ?? "");
     if (mode === "score") return (b.final_score ?? -1) - (a.final_score ?? -1);
-    if (mode === "saved_date") return (b.id > a.id ? 1 : b.id < a.id ? -1 : 0);
+    if (mode === "saved_date") return (b.saved_at ?? "").localeCompare(a.saved_at ?? "");
     if (mode === "status") {
       const pa = STATUS_PRIORITY[a.status] ?? 99;
       const pb = STATUS_PRIORITY[b.status] ?? 99;

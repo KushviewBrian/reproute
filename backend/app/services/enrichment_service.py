@@ -12,7 +12,7 @@ from app.db.session import _get_engine
 from app.models.business import Business
 from app.models.lead_score import LeadScore
 from app.models.route_candidate import RouteCandidate
-from app.services.contact_intelligence import promote_owner_name, resolved_confidence
+from app.services.contact_intelligence import promote_owner_name
 from app.services.osm_enrichment_service import OsmEnrichmentResult, fetch_osm_enrichment
 from app.utils.redis_client import redis_client
 
@@ -22,28 +22,6 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Quota
 # ---------------------------------------------------------------------------
-
-
-def _write_owner_name(
-    business,
-    name: str,
-    source: str,
-    confidence: float,
-) -> None:
-    """Backward-compatible write helper used by existing API paths."""
-    from datetime import UTC, datetime
-
-    existing_src = business.owner_name_source or ""
-    existing_conf = float(business.owner_name_confidence or 0.0)
-    if existing_src == "manual":
-        return
-    new_conf = resolved_confidence(source, confidence)
-    if business.owner_name and new_conf <= existing_conf:
-        return
-    business.owner_name = name
-    business.owner_name_source = source
-    business.owner_name_confidence = new_conf
-    business.owner_name_last_checked_at = datetime.now(UTC)
 
 
 async def reserve_enrichment_caps(user_id: UUID | None) -> None:
