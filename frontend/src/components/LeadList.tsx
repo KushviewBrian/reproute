@@ -1,16 +1,19 @@
+import React, { useEffect, useRef, useState } from "react";
 import type { Lead, ValidationStateResponse } from "../api/client";
-import type React from "react";
-import { useState } from "react";
 
 type Props = {
   leads: Lead[];
+  loading?: boolean;
   selectedLead: { business_id: string } | null;
   onSave: (lead: Lead) => void;
-  onSaveWithNote: (lead: Lead, noteText: string) => void;
+  onSaveWithNote: (lead: Lead, noteText: string, initialStatus?: string) => void;
   onSelect: (lead: Lead) => void;
   onAddStop: (lead: Lead) => void;
   corridorMiles: string;
   validationStates?: Record<string, ValidationStateResponse>;
+  userLat?: number;
+  userLng?: number;
+  isFirstRun?: boolean;
 };
 
 function scoreBadgeClass(score: number) {
@@ -25,67 +28,125 @@ function metersToFeet(m: number) {
   return `${ft.toLocaleString()} ft`;
 }
 
-function IconBookmarkPlus() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/><line x1="12" y1="9" x2="12" y2="15"/><line x1="9" y1="12" x2="15" y2="12"/>
-    </svg>
-  );
+function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371000;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 function validationBadgeProps(label: string): { className: string; text: string } {
   switch (label) {
-    case "Validated":     return { className: "val-badge val-badge--validated",  text: "✓ Validated" };
-    case "Mostly valid":  return { className: "val-badge val-badge--mostly",     text: "~ Mostly valid" };
-    case "Needs review":  return { className: "val-badge val-badge--review",     text: "~ Review" };
-    case "Low confidence":return { className: "val-badge val-badge--low",        text: "✗ Low" };
-    default:              return { className: "val-badge val-badge--unchecked",  text: "· Unchecked" };
+    case "Validated":      return { className: "val-badge val-badge--validated", text: "✓ Valid" };
+    case "Mostly valid":   return { className: "val-badge val-badge--mostly",    text: "~ Mostly" };
+    case "Needs review":   return { className: "val-badge val-badge--review",    text: "~ Review" };
+    case "Low confidence": return { className: "val-badge val-badge--low",       text: "✗ Low" };
+    default:               return { className: "val-badge val-badge--unchecked", text: "· Uncheck" };
   }
 }
 
 function IconNavigation() {
   return (
-    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <polygon points="3 11 22 2 13 21 11 13 3 11"/>
     </svg>
   );
 }
 
-export function LeadList({ leads, selectedLead, onSave, onSaveWithNote, onSelect, onAddStop, corridorMiles, validationStates }: Props) {
+function IconBookmarkPlus() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/><line x1="12" y1="9" x2="12" y2="15"/><line x1="9" y1="12" x2="15" y2="12"/>
+    </svg>
+  );
+}
+
+function SkeletonCard() {
+  return (
+    <li className="lead-card lead-card--skeleton" style={{ gap: "0.5rem" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "44px 1fr", gap: "0.625rem", alignItems: "flex-start" }}>
+        <div className="skeleton-circle" style={{ width: 44, height: 44 }} />
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.375rem", paddingTop: "0.25rem" }}>
+          <div className="skeleton-line" style={{ height: "13px", width: "70%", borderRadius: 4 }} />
+          <div className="skeleton-line" style={{ height: "11px", width: "45%", borderRadius: 4 }} />
+        </div>
+      </div>
+      <div className="skeleton-line" style={{ height: "10px", width: "90%", borderRadius: 4 }} />
+      <div className="skeleton-line" style={{ height: "10px", width: "60%", borderRadius: 4 }} />
+    </li>
+  );
+}
+
+export function LeadList({
+  leads, loading, selectedLead, onSave, onSaveWithNote, onSelect, onAddStop,
+  corridorMiles, validationStates, userLat, userLng, isFirstRun,
+}: Props) {
   const [draftNotes, setDraftNotes] = useState<Record<string, string>>({});
   const [tooltipLeadId, setTooltipLeadId] = useState<string | null>(null);
+  const [overflowOpenId, setOverflowOpenId] = useState<string | null>(null);
+  const [expandedNoteId, setExpandedNoteId] = useState<string | null>(null);
+  const animatedRef = useRef<Set<string>>(new Set());
+
+  // Close overflow on outside click
+  useEffect(() => {
+    if (!overflowOpenId) return;
+    function onOutside(e: MouseEvent) {
+      if (!(e.target as HTMLElement).closest(".overflow-menu-wrap")) setOverflowOpenId(null);
+    }
+    document.addEventListener("mousedown", onOutside);
+    return () => document.removeEventListener("mousedown", onOutside);
+  }, [overflowOpenId]);
 
   function setDraft(businessId: string, value: string) {
     setDraftNotes((prev) => ({ ...prev, [businessId]: value }));
   }
 
-  function submitDraft(lead: Lead) {
+  function submitDraft(lead: Lead, status?: string) {
     const noteText = (draftNotes[lead.business_id] ?? "").trim();
-    if (!noteText) return;
-    onSaveWithNote(lead, noteText);
+    onSaveWithNote(lead, noteText, status);
     setDraft(lead.business_id, "");
+    setExpandedNoteId(null);
   }
 
-  function handleScoreBadgeClick(lead: Lead, event: React.MouseEvent<HTMLSpanElement>) {
-    event.stopPropagation();
+  function handleScoreBadgeClick(lead: Lead, e: React.MouseEvent) {
+    e.stopPropagation();
     onSelect(lead);
     if (typeof window === "undefined") return;
     const key = "reproute_score_tooltip_seen_v1";
-    const seen = window.localStorage.getItem(key);
-    if (!seen) {
+    if (!window.localStorage.getItem(key)) {
       setTooltipLeadId(lead.business_id);
       window.localStorage.setItem(key, "1");
     }
   }
 
+  if (loading && leads.length === 0) {
+    return (
+      <>
+        <div className="lead-list-header">
+          <h2>Prospects</h2>
+        </div>
+        <ul className="lead-list">
+          <SkeletonCard /><SkeletonCard /><SkeletonCard />
+        </ul>
+      </>
+    );
+  }
+
   if (leads.length === 0) {
     return (
       <div className="empty-state">
-        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
           <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
         </svg>
-        <p className="empty-state-title">No prospects yet</p>
-        <p className="empty-state-body">Plan a route to discover businesses within {corridorMiles} mi.</p>
+        <p className="empty-state-title">No prospects found</p>
+        <p className="empty-state-body">
+          {isFirstRun
+            ? "Enter a route above to discover businesses near your drive."
+            : `Try widening the corridor or lowering the minimum score (currently within ${corridorMiles} mi).`}
+        </p>
       </div>
     );
   }
@@ -97,94 +158,95 @@ export function LeadList({ leads, selectedLead, onSave, onSaveWithNote, onSelect
         <span className="lead-count">{leads.length}</span>
       </div>
       <ul className="lead-list">
-        {leads.map((lead) => (
-          <li
-            key={lead.business_id}
-            className={`lead-card${selectedLead?.business_id === lead.business_id ? " selected" : ""}`}
-            onClick={() => onSelect(lead)}
-          >
-            <div className="lead-card-top">
-              <span className="lead-name">{lead.name}</span>
-              <div style={{ display: "flex", alignItems: "center", gap: "0.3rem", flexShrink: 0 }}>
-                {(() => {
-                  const vs = validationStates?.[lead.business_id];
-                  const { className, text } = validationBadgeProps(vs?.overall_label ?? "Unchecked");
-                  return <span className={className} title={vs?.overall_confidence != null ? `Confidence: ${Math.round(vs.overall_confidence)}%` : undefined}>{text}</span>;
-                })()}
-                <span
-                  className={scoreBadgeClass(lead.final_score)}
-                  onClick={(e) => handleScoreBadgeClick(lead, e)}
-                  title="Tap for score explanation"
-                >
-                  {lead.final_score}
-                </span>
-              </div>
-            </div>
-            {tooltipLeadId === lead.business_id && (
-              <div
-                style={{
-                  marginTop: "0.3rem",
-                  background: "var(--gray-50)",
-                  border: "1px solid var(--gray-200)",
-                  borderRadius: "8px",
-                  padding: "0.4rem 0.5rem",
-                  fontSize: "0.68rem",
-                  color: "var(--gray-700)",
-                }}
-              >
-                Score combines fit, distance, and actionability. Higher means better route priority.
-                <button
-                  className="btn btn-ghost btn-sm"
-                  style={{ marginLeft: "0.4rem", padding: "0.1rem 0.35rem" }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setTooltipLeadId(null);
-                  }}
-                >
-                  Dismiss
-                </button>
-              </div>
-            )}
+        {leads.map((lead) => {
+          const isNearby =
+            userLat != null && userLng != null && lead.lat != null && lead.lng != null &&
+            haversineMeters(userLat, userLng, lead.lat, lead.lng) < 402;
 
-            <div className="lead-meta-row">
-              <span className="ins-class-tag">{lead.insurance_class ?? "Unknown"}</span>
-              {lead.is_blue_collar && (
-                <span className="ins-class-tag" style={{ background: "var(--blue-50, #eff6ff)", color: "var(--blue-700, #1d4ed8)", borderColor: "var(--blue-200, #bfdbfe)" }} title="Blue collar — priority fit">🔧 Blue collar</span>
-              )}
-              <span className="distance-tag">
-                <IconNavigation />
-                {metersToFeet(lead.distance_from_route_m)}
-              </span>
-            </div>
+          const isSelected = selectedLead?.business_id === lead.business_id;
+          const vs = validationStates?.[lead.business_id];
+          const { className: valClass, text: valText } = validationBadgeProps(vs?.overall_label ?? "Unchecked");
 
-            <p className="lead-explanation">
-              Why it ranked: {lead.explanation.fit} · {lead.explanation.distance}
-            </p>
+          // Score badge animation — only first time this business_id is rendered
+          const shouldAnimate = !animatedRef.current.has(lead.business_id);
+          if (shouldAnimate) animatedRef.current.add(lead.business_id);
 
-            <p className="lead-explanation" style={{ marginTop: "-0.1rem" }}>
-              Contact data: {lead.phone ? "Phone" : "No phone"} · {lead.website ? "Website" : "No website"} · Confidence: {validationStates?.[lead.business_id]?.overall_label ?? "Unchecked"}
-            </p>
+          const noteExpanded = expandedNoteId === lead.business_id;
 
-            <p className="lead-explanation" style={{ marginTop: "-0.1rem" }}>
-              {lead.address ?? "Address unavailable"}
-            </p>
-            {lead.owner_name && (
-              <p className="lead-explanation" style={{ marginTop: "-0.1rem", color: "var(--gray-600)" }}>
-                Owner: <strong>{lead.owner_name}</strong>
-                {lead.owner_name_confidence != null && (
-                  <span style={{ marginLeft: "0.3rem", fontSize: "0.65rem", color: "var(--gray-400)" }}>
-                    {Math.round(lead.owner_name_confidence * 100)}% confidence
+          return (
+            <li
+              key={lead.business_id}
+              className={`lead-card${isSelected ? " selected" : ""}`}
+              onClick={() => onSelect(lead)}
+            >
+              {/* Top row: score circle + info */}
+              <div className="lead-card-top">
+                <div className="score-circle-wrap">
+                  <span
+                    className={`${scoreBadgeClass(lead.final_score)}${shouldAnimate ? " animate-in" : ""}`}
+                    onClick={(e) => handleScoreBadgeClick(lead, e)}
+                    title="Tap for score explanation"
+                    role="button"
+                    aria-label={`Score ${lead.final_score}, tap for explanation`}
+                  >
+                    {lead.final_score}
                   </span>
-                )}
-              </p>
-            )}
+                </div>
 
-            {(lead.phone || lead.website) && (
+                <div className="lead-card-info">
+                  <span className="lead-name">{lead.name}</span>
+                  <div className="lead-meta-row">
+                    <span className="ins-class-tag">{lead.insurance_class ?? "Unknown"}</span>
+                    {lead.is_blue_collar && (
+                      <span className="blue-collar-tag">🔧 Blue collar</span>
+                    )}
+                    <span className="distance-tag">
+                      <IconNavigation />
+                      {metersToFeet(lead.distance_from_route_m)}
+                    </span>
+                    {isNearby && <span className="nearby-badge">Nearby</span>}
+                  </div>
+                </div>
+              </div>
+
+              {/* Score tooltip (shows once) */}
+              {tooltipLeadId === lead.business_id && (
+                <div className="score-tooltip">
+                  Score combines fit, distance, and actionability. Higher = better route priority.
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    style={{ marginLeft: "0.5rem", padding: "0.1rem 0.35rem", fontSize: "0.65rem" }}
+                    onClick={(e) => { e.stopPropagation(); setTooltipLeadId(null); }}
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              )}
+
+              {/* Explanation */}
+              <p className="lead-explanation">
+                {lead.explanation.fit} · {lead.explanation.distance}
+              </p>
+
+              {/* Address */}
+              {lead.address && (
+                <p className="lead-explanation">{lead.address}</p>
+              )}
+
+              {/* Contact row: phone, website, validation */}
               <div className="lead-contact-row">
-                {lead.phone && <span className="lead-contact-item">{lead.phone}</span>}
+                {lead.phone && (
+                  <a
+                    className="lead-contact-item"
+                    href={`tel:${lead.phone}`}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {lead.phone}
+                  </a>
+                )}
                 {lead.website && (
                   <a
-                    className="lead-contact-item lead-contact-link"
+                    className="lead-contact-link"
                     href={lead.website.startsWith("http") ? lead.website : `https://${lead.website}`}
                     target="_blank"
                     rel="noopener noreferrer"
@@ -193,64 +255,103 @@ export function LeadList({ leads, selectedLead, onSave, onSaveWithNote, onSelect
                     {lead.website.replace(/^https?:\/\//, "").replace(/\/$/, "")}
                   </a>
                 )}
+                <span
+                  className={valClass}
+                  title={vs?.overall_confidence != null ? `Confidence: ${Math.round(vs.overall_confidence)}%` : undefined}
+                >
+                  {valText}
+                </span>
               </div>
-            )}
 
-            <div className="lead-card-actions">
-              <div className="lead-note-row">
-              <input
-                type="text"
-                placeholder="Quick note..."
-                className="form-input lead-note-input"
-                value={draftNotes[lead.business_id] ?? ""}
-                onChange={(e) => setDraft(lead.business_id, e.target.value)}
-                onClick={(e) => e.stopPropagation()}
-                onKeyDown={(e) => {
-                  if (e.key !== "Enter") return;
-                  e.stopPropagation();
-                  submitDraft(lead);
-                }}
-              />
+              {/* Owner */}
+              {lead.owner_name && (
+                <p className="lead-explanation">
+                  Ask for: <strong style={{ color: "var(--text-primary)" }}>{lead.owner_name}</strong>
+                  {lead.owner_name_confidence != null && (
+                    <span style={{ marginLeft: "0.3rem", fontSize: "0.62rem", color: "var(--text-muted)" }}>
+                      {Math.round(lead.owner_name_confidence * 100)}%
+                    </span>
+                  )}
+                </p>
+              )}
+
+              {/* Note expansion area */}
+              <div className={`lead-note-expand${noteExpanded ? " open" : ""}`}>
+                <input
+                  type="text"
+                  placeholder="Quick note… (Enter to save)"
+                  className="lead-note-input"
+                  value={draftNotes[lead.business_id] ?? ""}
+                  onChange={(e) => { e.stopPropagation(); setDraft(lead.business_id, e.target.value); }}
+                  onClick={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => {
+                    if (e.key !== "Enter") return;
+                    e.stopPropagation();
+                    submitDraft(lead);
+                  }}
+                />
               </div>
-              <div className="lead-actions-row">
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onSave(lead);
-                }}
-              >
-                <IconBookmarkPlus />
-                Save
-              </button>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  submitDraft(lead);
-                }}
-              >
-                Save + Note
-              </button>
-              {lead.lat != null && lead.lng != null && (
+
+              {/* Actions */}
+              <div className="lead-card-actions" onClick={(e) => e.stopPropagation()}>
                 <button
                   type="button"
-                  className="btn btn-ghost btn-sm"
-                  title="Add as route stop"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onAddStop(lead);
-                  }}
+                  className="lead-save-btn"
+                  onClick={() => onSave(lead)}
                 >
-                  + Stop
+                  <IconBookmarkPlus />
+                  Save
                 </button>
-              )}
+
+                <div className="overflow-menu-wrap">
+                  <button
+                    type="button"
+                    className="lead-overflow-btn"
+                    aria-label="More actions"
+                    aria-expanded={overflowOpenId === lead.business_id}
+                    onClick={() => setOverflowOpenId((prev) => prev === lead.business_id ? null : lead.business_id)}
+                  >
+                    ···
+                  </button>
+                  {overflowOpenId === lead.business_id && (
+                    <ul className="overflow-menu" role="menu">
+                      <li role="none">
+                        <button
+                          role="menuitem"
+                          onClick={() => {
+                            setExpandedNoteId(noteExpanded ? null : lead.business_id);
+                            setOverflowOpenId(null);
+                          }}
+                        >
+                          {noteExpanded ? "Hide note" : "Save + Note"}
+                        </button>
+                      </li>
+                      {lead.lat != null && lead.lng != null && (
+                        <li role="none">
+                          <button
+                            role="menuitem"
+                            onClick={() => { onAddStop(lead); setOverflowOpenId(null); }}
+                          >
+                            + Add as stop
+                          </button>
+                        </li>
+                      )}
+                      <li role="none">
+                        <button
+                          role="menuitem"
+                          style={{ color: "var(--accent-danger)" }}
+                          onClick={() => { submitDraft(lead, "not_interested"); setOverflowOpenId(null); }}
+                        >
+                          Not interested
+                        </button>
+                      </li>
+                    </ul>
+                  )}
+                </div>
               </div>
-            </div>
-          </li>
-        ))}
+            </li>
+          );
+        })}
       </ul>
     </>
   );

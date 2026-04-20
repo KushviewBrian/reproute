@@ -13,8 +13,8 @@ export default defineConfig({
         short_name: "Reproute",
         start_url: "/",
         display: "standalone",
-        background_color: "#ffffff",
-        theme_color: "#1f2937",
+        background_color: "#0F1923",
+        theme_color: "#0F1923",
         icons: [
           { src: "/pwa-192.png", sizes: "192x192", type: "image/png" },
           { src: "/pwa-512.png", sizes: "512x512", type: "image/png" }

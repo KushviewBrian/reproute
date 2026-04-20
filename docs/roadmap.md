@@ -7,6 +7,7 @@ Developer notes:
 Find a way to streamline / optimize /minimize server usage
 plan mobile app / integration
 integrate with google/apple maps?
+employee count estimate
 
 ## Purpose
 
@@ -861,6 +862,423 @@ MVP is complete when all are true:
 
 ---
 
+---
+
+### Phase 11 — UI Overhaul and Field Workflow Intelligence
+
+**Status: Not started**
+
+**Scope:**
+A complete visual and interaction redesign of the frontend, plus a set of field-workflow features that are either frontend-only or require minimal backend additions. This phase treats the app as a precision field instrument — not a SaaS dashboard. Every screen is evaluated against the question: "Can a rep do this with one hand, standing outside a business?"
+
+UI changes are comprehensive but non-breaking to the existing API client (`client.ts`), state management architecture (`App.tsx` hooks), and offline queue logic (`offlineQueue.ts`). No new npm dependencies are introduced. All existing TypeScript types are preserved and extended, not replaced.
+
+This phase is divided into seven workstreams. Workstreams 11-B through 11-G are parallel-safe once 11-A lands.
+
+---
+
+**Pre-implementation decisions required before coding begins:**
+
+The following questions must be answered and recorded before any code is written, to prevent mid-implementation reversals:
+
+1. **Accent color** — Orange (`#F97316`) vs. an alternate brand color. Orange is proposed because it communicates urgency, is distinct from the blue route line on the map, and differentiates from generic blue-SaaS. Must be confirmed before tokens land.
+2. **Dark sidebar or full dark app** — Proposal: dark sidebar (`#0F1923`) + light map (OSM tiles stay light for sunlight legibility). Full dark is an option but risks map illegibility on cheap Android screens outdoors.
+3. **Right-rail detail split vs. improved bottom sheet** — Right-rail is more information-dense on desktop but requires explicit `map.resize()` handling (MapLibre GL v5.23 exposes `map.resize()` and `trackResize` option; the split is safe but must be tested). Confirm preference before Step 8.
+4. **Icon-only sidebar rail vs. labeled tabs** — Icon-only is cleaner but risks discoverability for non-technical reps. Proposed mitigation: tooltip on hover (desktop) + label visible on mobile bottom nav. Confirm acceptable.
+5. **Text muted color accessibility** — Proposed `#4A5568` on `#0F1923` is 3.8:1 contrast — fails WCAG AA (4.5:1) for normal text. Must either lighten to `#64748B` (4.7:1, passes) or restrict `--text-muted` to decorative/large-text use only. Decision required before token freeze.
+
+---
+
+**Deliverables — 11-A: Design System and App Shell**
+
+Full replacement of `app.css` design tokens and application chrome. Hand-rolled CSS only — no new framework. All existing class names are preserved as-is or aliased during the transition to avoid breaking component JSX.
+
+**Color tokens (proposed — subject to pre-implementation decision #1, #2, #5):**
+```css
+--surface-0:  #0F1923   /* primary chrome, sidebar bg */
+--surface-1:  #162030   /* cards, panels */
+--surface-2:  #1E2D3D   /* selected states */
+--surface-3:  #253346   /* hover states */
+--border:     rgba(255,255,255,0.07)
+
+--accent:     #F97316   /* orange */
+--accent-dim: rgba(249,115,22,0.15)
+--accent-danger: #F87171
+
+--text-primary:   #F1F5F9
+--text-secondary: #94A3B8
+--text-muted:     #64748B   /* lightened from #4A5568 to pass WCAG AA */
+
+--score-high: #22D3A0
+--score-mid:  #FBBF24
+--score-low:  #F87171
+
+/* Status — richer variants, existing variable names preserved */
+--status-saved:          #60A5FA
+--status-visited:        #A78BFA
+--status-called:         #34D399
+--status-follow_up:      #FBBF24
+--status-not_interested: #6B7280
+```
+
+**Typography:**
+- `DM Sans` (400/500/600/700) added via `@import` in `app.css` — no `index.html` change required, no build step, no new dependency
+- Font stack updated to: `"DM Sans", "Inter", "IBM Plex Sans", system-ui, sans-serif`
+- `Inter` and `JetBrains Mono` remain in stack; no removal
+
+**Clerk UserButton theming:**
+- Clerk v5 supports `appearance` prop on `<UserButton>` — set `appearance={{ baseTheme: undefined, variables: { colorBackground: 'var(--surface-1)', colorText: 'var(--text-primary)' } }}` to match dark chrome
+- This is the only Clerk-specific change; auth flow is untouched
+
+**PWA manifest update:**
+- `theme_color` changed from `#1f2937` to `#0F1923` to match new chrome
+- `background_color` changed to `#0F1923`
+- Change is in `vite.config.ts` `VitePWA` manifest object — no other PWA changes
+
+**App shell structural changes:**
+- Topbar height: 56px → 48px (`grid-template-rows: 48px 1fr`)
+- Topbar center: route status breadcrumb — `<div class="topbar-route-status">` renders "No route" or "City A → City B · N leads"; derived from existing `routeId`, `leads.length`, and new `routeLabel` state (string, stored alongside `routeId` when a route is created)
+- Topbar right: offline dot (`<span class="topbar-offline-dot">`) driven by `queueCount > 0` from `getQueuedCount()` — listens to `QUEUE_UPDATED_EVENT` exactly as `LeadDetail.tsx` already does; pulses amber when active, hidden when zero
+- Sidebar width: 320px → 360px
+- Sidebar tab bar replaced with vertical icon rail: `<nav class="sidebar-rail">` (44px wide, flex-column) + `<div class="sidebar-content">` (316px, flex-1). The three existing tab buttons move into the rail as icon-only buttons. On mobile (`max-width: 767px`), the rail becomes a bottom fixed bar with icons + labels (standard mobile nav pattern)
+- Sidebar bottom footer: `<div class="sidebar-footer">` (40px, flex-row) — contains offline queue pill (count + sync status) and export button. The export button is context-sensitive: shows "Export Route" when a route is active and tab is Route, shows "Export All" when tab is Saved
+
+**Empty map state overlay:**
+- `<div class="map-empty-state">` absolutely positioned within `.map-area`, centered, pointer-events none
+- Renders only when `!routeId` — controlled in `App.tsx` by existing `routeId` state
+- Contains a short SVG illustration (inline, no external asset) and "Plan a route to see prospects" label
+- Hidden via `display: none` when `routeId` is set — no animation needed, instant transition
+
+**Offline queue banner:**
+- Replaces all scattered `queueCount > 0` UI fragments across `LeadDetail.tsx` and `SavedLeads.tsx`
+- Single `<div class="sidebar-offline-banner">` rendered in `App.tsx` sidebar scroll area when `queueCount > 0`
+- Contains count, "Will sync when online" text, and a manual retry button that calls `flushQueuedNotes` + `flushQueuedStatusChanges` directly
+- Each component (`LeadDetail`, `SavedLeads`) still reads `queueCount` locally for its own logic but no longer renders its own banner UI
+- **Migration note:** remove the offline banner JSX from `LeadDetail.tsx:564–568` and `SavedLeads.tsx:302–305` after the App-level banner lands; do not remove until App banner is verified working
+
+**Toast system:**
+- `<div id="toast-root">` added to `App.tsx` render, positioned fixed top-right, z-index 300
+- `useToast()` hook in new file `src/lib/toast.ts` — exposes `toast.success(msg)`, `toast.error(msg)`, `toast.info(msg)`, `toast.warn(msg)`
+- Internally uses a module-level event bus (`CustomEvent` on `window`) — no React context, no prop drilling, callable from anywhere including async API handlers
+- Max 3 visible toasts; excess queued and shown as prior toasts dismiss
+- Auto-dismiss 2.5s; swipe-to-dismiss on mobile (touch event, 60px threshold)
+- CSS-only animation: slide in from right, fade out on dismiss
+- **Existing error banners are NOT replaced** — toasts are for transient success/info feedback only; persistent errors (route load failure, API 401) remain as inline banners
+
+---
+
+**Deliverables — 11-B: Lead Discovery (Route Tab)**
+
+**Route form — two-phase layout (changes to `RouteForm.tsx`):**
+
+Phase A (no route active — `!routeId` in parent):
+- Form root gets class `route-form--phase-a`
+- FROM/TO visual layout: a vertical card with a route-line glyph between origin and destination inputs (CSS `::before` pseudo-element, not an SVG asset)
+- Corridor: `<div class="corridor-segmented">` replaces `<select>`. Three `<button>` elements (0.5 mi / 1.0 mi / 2.0 mi), active state driven by `corridor` prop. Calls existing `onCorridorChange` — no new prop needed
+- Waypoints accordion: toggle button "+ Add stops" / "- Hide stops"; accordion state is local to `RouteForm` via `useState`; existing waypoint add/remove/update logic unchanged
+- Loading progress: `RouteForm` receives no new prop for this. Instead, `submit()` sets a new local `loadingStep` state (`null | 'geocoding' | 'routing' | 'prospects'`). Steps advance deterministically: geocode calls complete → set 'routing', `createRoute` call starts → set 'routing', createRoute resolves → set 'prospects', `onCreated` fires → parent sets `routeId` → form transitions to Phase B. The progress bar is a CSS `width` transition driven by step index (33% / 66% / 100%)
+
+Phase B (route active — `routeId` set in parent):
+- `RouteForm` is hidden; a new `<div class="route-summary-bar">` renders above the filter chip bar in `App.tsx`
+- Route summary bar contains: distance, duration, lead count (all from `CreateRouteResponse` — need to store `routeDistance` and `routeDuration` as new state in `App.tsx`), and an "Edit Route" button that clears `routeId` to return to Phase A
+- **No separate component** — route summary bar is inline JSX in `App.tsx` route tab render, not a new file
+
+**Filter chip bar (changes to `App.tsx` route tab render):**
+- Replaces the `<div class="filter-strip">` section entirely
+- `<div class="filter-chip-bar">`: `overflow-x: auto`, `scroll-snap-type: x mandatory`, `display: flex`, `gap: 0.5rem`, `padding: 0.5rem 1rem`
+- Each chip: `<button class="filter-chip [filter-chip--active]">` — CSS handles active state color
+- Chips and their bound state:
+  - `Score: {minScore}+` → tap opens `<div class="filter-popover">` with the existing range input; popover is absolutely positioned below the chip, closes on outside click (standard `useEffect` + `document.addEventListener('click')` pattern)
+  - `Phone` → toggles `hasPhone`; no popover needed
+  - `Website` → toggles `hasWebsite`
+  - `Owner` → toggles `hasOwnerName`
+  - `Blue Collar` → toggles `blueCollar`
+  - `Type: {label}` → tap opens popover with existing insurance class list as radio buttons
+  - `Sort: {label}` → tap opens popover with sort options
+- "Apply" button removed — `onApplyFilters()` is called on popover close for score/type; boolean toggles call `onApplyFilters()` immediately (same as current "Apply" button behavior but triggered on chip tap)
+- Chip bar is `position: sticky`, `top: 0` within `.sidebar-scroll` so it doesn't scroll with the lead list
+- **Existing filter state variables in `App.tsx` are unchanged** — only the JSX rendering changes
+
+**Lead card redesign (changes to `LeadList.tsx` and `app.css`):**
+- Card layout: CSS grid `grid-template-columns: 44px 1fr` for the header row — score circle in column 1, name/meta in column 2
+- Score circle: `width: 44px; height: 44px` (up from 36px for tap target), `border-radius: 50%`, score tier color via existing `scoreBadgeClass()` logic
+- Action row: primary `Save` button always visible; `<button class="btn-overflow">···</button>` opens an inline `<ul class="overflow-menu">` with: Save + Note, + Stop (only if `lead.lat != null`), Not Interested (calls `onSave` with status note — requires passing a status param; see API note below)
+- Overflow menu: controlled by `overflowOpenId` state (`string | null`) in `LeadList`; closes on outside click or Escape key
+- Quick note expansion: `expandedNoteId` state (`string | null`) in `LeadList`; when set matches a lead's `business_id`, an `<input>` row animates open below the action row via CSS `max-height` transition (0 → 3rem, 180ms)
+- "Not Interested" from overflow: calls `onSaveWithNote(lead, "")` and passes a new optional `initialStatus` param — **requires adding `initialStatus?: string` to `onSaveWithNote` signature in both `LeadList.tsx` and `App.tsx`**. The `onSaveWithNote` handler in `App.tsx` already calls `saveLead` then optionally `createNote`; it needs a third step: `updateSavedLead(saved.id, { status: initialStatus })` when `initialStatus` is provided
+- Skeleton loading: `LeadList` receives a new `loading: boolean` prop from `App.tsx`. When `loading` is true and `leads.length === 0`, renders 3 `<li class="lead-card lead-card--skeleton">` elements with CSS shimmer animation instead of the empty state. Shimmer: `background: linear-gradient(90deg, var(--surface-1) 25%, var(--surface-2) 50%, var(--surface-1) 75%)` animated via `@keyframes shimmer`
+- Validation badge: moved from top-right of card to the contact row inline (next to phone number) — less visual clutter at top of card
+- `tooltipLeadId` logic (score tooltip, `localStorage` key `reproute_score_tooltip_seen_v1`): preserved exactly, no changes to behavior
+
+**Map marker redesign (changes to `MapPanel.tsx`):**
+
+The current implementation uses circle layers on a GeoJSON source. The redesign uses the same approach (circle + text layers via data expressions) rather than HTML `Marker` elements — HTML markers degrade at 40+ items, and `map.loadImage` + sprite management for custom SVG shapes has cross-browser edge cases. Circle + text layers are GPU-accelerated and scale cleanly.
+
+Implementation:
+- Remove `lead-halo` layer (not needed with new design)
+- `lead-points` layer: `circle-radius` driven by `["get", "score"]` expression (radius 8–14px based on score tier); `circle-color` driven by score-tier expression using `--score-high/mid/low` hex values; `circle-stroke-width: 2.5`; `circle-stroke-color: #ffffff`
+- Add `lead-labels` symbol layer on the same `leads` source: `text-field: ["get", "score_display"]` (add `score_display: String(Math.round(l.final_score))` to feature properties); `text-size: 9`; `text-color: #ffffff`; `text-font: ["literal", ["DM Sans Bold", "Open Sans Bold", "Arial Unicode MS Bold"]]` — **fonts must be available in the map style; the current raster fallback style (`RASTER_STYLE`) has no glyph source, so text labels will silently not render on the raster style.** Solution: add a `glyphs` URL to `RASTER_STYLE` pointing to a public glyph CDN (`https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf`) or use `text-field` only on the PMTiles style path. Spec this carefully before implementation
+- Blue collar indicator: add a second small circle layer `lead-bc-dot` — `circle-radius: 3`; `circle-color: #F97316`; offset via `circle-translate: [6, -6]`; filtered by `["==", ["get", "is_blue_collar"], true]` — simpler and more reliable than SVG overlay
+- Selected marker: `circle-radius` expression adds +3 when `["get", "selected"]` is true; add `lead-pulse` circle layer with large radius + low opacity + animation via `StyleImageInterface` render callback — **this is the only part that requires `map.addImage` with a custom render callback for the pulse ring; everything else is data-driven expressions**
+- Already-worked markers: `MapPanel` receives new prop `savedLeads: SavedLead[]` from `App.tsx`. A second GeoJSON source `saved-lead-points` is added with a separate circle layer using muted fill (`--surface-3`) and a checkmark symbol. These are added during `map.on('load')` setup alongside the existing `route` and `leads` sources
+- Clustering: add `cluster: true, clusterMaxZoom: 11, clusterRadius: 40` to the `leads` GeoJSON source spec. Add `lead-clusters` circle layer (filtered `["has", "point_count"]`) and `lead-cluster-count` symbol layer. The existing `lead-points` click handler needs `["!", ["has", "point_count"]]` filter to exclude cluster features. Add separate cluster click handler: `map.on('click', 'lead-clusters', (e) => { map.getSource('leads').getClusterExpansionZoom(...).then(zoom => map.easeTo({...})) })`
+- `map.resize()` call: required whenever the map container changes size (detail panel split). `MapPanel` exposes a `onResize` callback prop — `App.tsx` calls it when `selectedLead` is set/cleared, which triggers `mapRef.current?.resize()` inside `MapPanel`. MapLibre GL v5.23 also supports `trackResize: true` on map init (uses ResizeObserver internally) — enable this as a belt-and-suspenders measure
+- "Fit route" button: `<button class="map-fit-btn">` positioned absolute bottom-right within `.map-area` in `App.tsx`; calls a `fitRoute()` function passed down as prop to `MapPanel` or handled in `App.tsx` by calling a ref-exposed method. Simpler: add `onFitRoute` prop to `MapPanel` that App.tsx provides; MapPanel exposes the bounds-fit logic via a `useImperativeHandle` or simply via `MapPanel` accepting a `fitTrigger: number` prop that increments to trigger the effect
+
+**Recent routes list (changes to `App.tsx` and `RouteForm.tsx`):**
+- New localStorage key `reproute_recent_routes_v1`: array of `{ routeId: string, label: string, leadCount: number, createdAt: string }`, max 5 entries, newest first
+- Written in `onCreated` handler in `App.tsx` when a new route is created (label derived from origin/destination, which `RouteForm` must pass up via an updated `onCreated` payload — add `originLabel` and `destLabel` to the `onCreated` callback type)
+- `RouteForm` renders recent routes as a collapsed `<details>` element at the bottom of Phase A form — native HTML, no JS needed for expand/collapse
+- Each recent route entry: one-line button showing label + lead count + date; tap calls `onReloadRoute(routeId)` prop (new prop on RouteForm) which triggers `loadLeads(routeId)` in App.tsx and sets `routeId` state without re-running routing
+
+---
+
+**Deliverables — 11-C: Lead Detail Panel**
+
+**Desktop layout change: right-rail split**
+
+Current: `.detail-pane` is `position: absolute; left: 320px; bottom: 0; right: 0; height: 60vh` — it overlays the map.
+
+New: when a lead is selected, `.app-body` transitions from `grid-template-columns: 360px 1fr` to `grid-template-columns: 360px 1fr 380px`. The third column is the detail rail. `.detail-pane` becomes `position: static; grid-column: 3; height: 100%` — it is a normal grid cell, not an overlay.
+
+Implementation notes:
+- The `grid-template-columns` transition is a CSS `transition: grid-template-columns 180ms ease-out` on `.app-body` — this works in all modern browsers
+- MapLibre container shrinks when column 3 appears; `map.resize()` must be called after the CSS transition completes: `setTimeout(() => mapRef.current?.resize(), 190)` in `App.tsx` when `selectedLead` changes from null to non-null
+- The 380px detail rail fits comfortably at 1280px (sidebar 360 + map ~540 + detail 380 = 1280). At narrower viewports (< 1100px), the detail rail overlays the map instead (falls back to current absolute behavior via media query)
+- Mobile (< 768px): `.detail-pane` stays `position: fixed; bottom: 0; left: 0; right: 0; height: 80vh` — no change from current bottom sheet pattern except height increase. Drag handle added via `::before` pseudo-element (centered pill, 36px × 4px)
+
+**Detail panel interior (changes to `LeadDetail.tsx`):**
+- Header row: business name + score badge + validation label on one line; close button top-right. Score badge is moved from hidden (current) to the header — rep sees score immediately without scrolling
+- Contact section: address row gets `<a href="geo:{lat},{lng}">` wrapping (opens native maps on mobile); phone row gets inline `<a href="tel:..." class="btn btn-sm btn-ghost">Call</a>`; website row gets inline `<a href="..." target="_blank" class="btn btn-sm btn-ghost">Visit</a>`. Owner row: if `owner_name` is set, shows "Ask for: {name}" with `[Edit]` button; edit mode is a local `ownerEditing: boolean` state, renders `<input>` inline, saves via `updateSavedLead` PATCH with `owner_name` field (already in the API client type)
+- Status section: replaces `<select>` with `<div class="status-segmented">` — five `<button>` elements, one per status option. Active state driven by `status` local state. Visual: active button gets accent border + background tint. **Not a progression rail** — all five options always visible and tappable in any order
+- Score breakdown: `<details class="score-breakdown-details">` with `<summary>Score breakdown — {final_score}</summary>` — native HTML collapsible, no JS. Expanded view: three `<div class="score-bar">` elements with `width: {score}%` inline style. Collapsed by default (no `open` attribute)
+- Validation section: remove the verbose field list from the default view; show only phone and website rows with their state chip + confidence. "Validate now" button unchanged. Field pin controls moved inside a nested `<details>` element ("Advanced") within the validation section — visible but not prominent
+- Notes section: unchanged structurally. Outcome status select and next action input remain always visible (they were previously cramped into a horizontal row; give them their own stacked rows for legibility in the narrower rail layout)
+- Quick-call log: `callLogged: boolean` local state, set to true when `[Call]` is tapped. When true, renders a `<div class="call-log-prompt">` below the phone row: "Log this call?" with outcome pre-set to "called" and the note textarea auto-focused. A "No thanks" dismiss button sets `callLogged` back to false
+
+---
+
+**Deliverables — 11-D: Today Tab and Saved Leads Tab**
+
+**Today tab (changes to `TodayDashboard.tsx`):**
+- `SavedLeadsTodayResponse` already contains all needed data — no API changes
+- Summary headline computed from response: `{overdue.length + due_today.length} things need attention` or "You're clear for today" if both zero
+- Section headers gain count badges: `<h3>Overdue <span class="section-badge">{overdue.length}</span></h3>`
+- Lead card in Today: same card component pattern as Saved leads card — business name, status pill, relative time indicator ("2 days overdue" computed from `next_follow_up_at` vs `Date.now()`), owner name if present, latest note preview, phone link. Tap opens detail panel via existing `onSelectLead` prop
+- Recent route card: `<div class="route-resume-card">` with accent left border — existing data from `data.recent_route`. "Resume" button calls `onGoToRoute()` and sets `routeId` in App.tsx via a new `onResumeRoute(routeId: string)` prop on `TodayDashboard`
+- Empty state: existing empty state enhanced with a CTA button; no structural change
+- Loading state: skeleton — 2 placeholder section headers + 2 placeholder cards each, shown while `loading` is true
+
+**Saved leads tab (changes to `SavedLeads.tsx`):**
+- Status tab pills: replace `<select class="form-select">` with `<div class="status-tabs">` containing one `<button>` per status + "All". Counts per status: computed from the full loaded `items` array (client-side count, not a new API call). `items` is already the full list for the current filter; counts are `items.filter(it => it.status === s).length`
+- Sort popover: `<button class="btn btn-icon" title="Sort">` opens `<div class="sort-popover">` (absolutely positioned) with radio-style buttons for: Due date, Status priority, Score, Name, Saved date. Sort logic uses the existing `sortSavedLeads()` function; add additional sort modes to it
+- Export consolidation: existing three export buttons (`Export CSV`, `By Type CSV`, `Route CSV`) replaced with a single `<div class="export-menu">` dropdown button. Dropdown rendered as `<ul>` with `position: absolute`; controlled by `exportMenuOpen: boolean` local state; closes on outside click
+- Search: `<input class="saved-search-input">` at top of list, above the status tab pills. `searchQuery: string` local state. Filter applied client-side: `items.filter(it => [it.business_name, it.address, it.owner_name, it.latest_note_text, it.phone].some(f => f?.toLowerCase().includes(searchQuery.toLowerCase())))`. Debounced 150ms via `useEffect` + `setTimeout` pattern. Cleared when `status` tab changes (reset in `useEffect([status])`)
+- Overdue card indicator: `className` on `<li>` gains `saved-card--overdue` when `it.next_follow_up_at && new Date(it.next_follow_up_at) < new Date()`. CSS: `border-left: 2px solid var(--accent-danger)`
+- Inline status stepper: `<div class="status-dots">` row on each card — 5 small dots, one per status, current status filled, others outlined. Tap calls `handleStatusChange(it.id, newStatus)` — new function that calls `updateSavedLead` (or `enqueueStatusChange` if offline) and updates local state optimistically. Existing `handleFollowUpChange` pattern is the exact model to follow
+- Swipe gesture: `onTouchStart` / `onTouchEnd` handlers on each `<li>`. Track `touchStartX`. On `touchEnd`: if delta > 60px right → `handleStatusChange` to advance status; if delta < -60px → `handleStatusChange` to 'not_interested'. Guard: only trigger if `Math.abs(deltaY) < 20` (not a vertical scroll). **iOS Safari caveat:** set `touch-action: pan-y` on the list items so vertical scrolling is not blocked; horizontal swipe will still register. Test explicitly on iOS Safari before marking done
+- Skeleton: 5 `<li class="saved-card saved-card--skeleton">` shown while `items.length === 0 && loading` — same shimmer pattern as LeadList
+
+---
+
+**Deliverables — 11-E: Live Location Mode**
+
+**"Field session" mode (changes to `App.tsx` and `MapPanel.tsx`):**
+- New `App.tsx` state: `fieldSession: boolean` (false by default), `currentPosition: GeolocationPosition | null`
+- "Start Field Session" toggle button renders in the route tab when `routeId` is set — placed in the route summary bar (11-B)
+- When toggled on: calls `navigator.geolocation.watchPosition(onPosition, onError, { maximumAge: 15000, timeout: 10000 })`. `watchId` stored in a `useRef<number | null>`. Toggling off calls `navigator.geolocation.clearWatch(watchId.current)`
+- Cleanup: `useEffect` return that calls `clearWatch` ensures no leak on unmount
+- `onPosition` callback: updates `currentPosition` state, triggering lead list re-sort
+- Lead list sort when `fieldSession` is true: client-side haversine sort replaces score sort. Haversine function is ~10 lines, implemented inline in `App.tsx` as a pure function. `sortLeads()` receives a new optional `userLat/userLng` param — when provided, sorts by distance to user position; otherwise falls back to existing score sort
+- "Nearby" badge: `lead.lat` and `lead.lng` checked against `currentPosition` in `LeadList.tsx` — needs `userLat?: number; userLng?: number` props added. Distance < 0.25 mi (402m) → `<span class="nearby-badge">Nearby</span>` on the card
+- "You are here" dot: `MapPanel` receives `userPosition: {lat: number, lng: number} | null` prop. A new `maplibregl.Marker` instance (HTML marker, not a GeoJSON layer) is created/updated when `userPosition` changes — HTML Marker is appropriate for a single always-visible position dot; performance concern doesn't apply to one marker. Dot styled as a 16px blue circle with white border via `element` option on `new maplibregl.Marker({ element: createYouAreHereEl() })`
+- Error handling: `onError` callback sets `fieldSession` to false and shows a toast warning ("Location access denied or unavailable")
+
+**Visit check-in (changes to `LeadDetail.tsx` and `SavedLeads.tsx`):**
+- `LeadDetail` receives `userPosition?: {lat: number, lng: number}` prop from `App.tsx`
+- Check-in button renders when: `userPosition` is set AND `lead.lat != null` AND haversine distance < 402m
+- Tap: sets `last_contact_attempt_at = new Date().toISOString()`, sets `status = 'visited'` (only if current status is 'saved'), opens quick note prompt (sets `callLogged = true` equivalent — reuse the same call-log pattern)
+
+**Already-worked markers:**
+- `MapPanel` receives `savedLeads: SavedLead[]` prop — passed from `App.tsx` where `savedLeads` list is already loaded in the Saved tab state but needs to be surfaced up. **Currently `SavedLeads.tsx` owns the saved leads state.** To avoid prop drilling or a new store: `App.tsx` adds a `savedLeadsSnapshot: SavedLead[]` state, updated via a new `onSavedLeadsLoaded(leads: SavedLead[])` callback prop on `SavedLeads`. `SavedLeads` calls this whenever its `items` state changes. This is a minimal lift — `onCountChange` already follows this pattern
+- Map layer `saved-lead-points`: GeoJSON source populated from `savedLeads.filter(sl => sl.lat && sl.lng)` — **note: `SavedLead` type does not currently include `lat`/`lng` fields.** The API response for `GET /saved-leads` must include coordinates, or this feature must geocode on the client, or it must be deferred. **Resolution: check whether the backend `SavedLead` schema returns coordinates. If not, this sub-feature is deferred to Phase 12 rather than blocking Phase 11. The rest of 11-E proceeds without it.**
+
+**Backend stub for proximity filtering:**
+- `GET /saved-leads` gains optional `lat: float`, `lng: float`, `radius_m: int` query params in the backend schema — accepted but ignored in Phase 11 (return full list unchanged). Frontend does not use these params in Phase 11. This prevents a later breaking change to the client type. Backend change: add params to the Pydantic query model with `Optional` typing and a `# TODO Phase 12` comment
+
+---
+
+**Deliverables — 11-F: Search**
+
+Fully client-side — no backend changes.
+
+- Implementation is described in 11-D (Saved leads tab search input)
+- `searchQuery` state is local to `SavedLeads.tsx` — not lifted to `App.tsx`
+- Search applies on top of the active status filter (AND logic: must match status tab AND match search query)
+- The `items` array used for search is the post-API, post-sort array — same array rendered to the list
+- Empty search result state: `<div class="empty-state">` with "No results for '{query}'" and a `<button onClick={() => setSearchQuery('')}>Clear search</button>`
+
+---
+
+**Deliverables — 11-G: Interaction Polish and Error Recovery**
+
+**Accessibility fixes (required before any other polish):**
+- All interactive elements: minimum 44×44px tap target (currently some `btn-sm` buttons are 28px — fix padding)
+- Focus rings: `:focus-visible` outline on all buttons and inputs; do not suppress `:focus` globally
+- ARIA labels on icon-only buttons: `aria-label="Close"`, `aria-label="Filter by score"`, etc.
+- Detail panel: `role="dialog"`, `aria-modal="true"`, focus trapped inside while open, Escape key closes (already partially handled — verify)
+- Tab navigation: logical tab order preserved after sidebar rail change (rail buttons tabIndex=0, content panel tabIndex=0, map tabIndex=-1)
+
+**Micro-interactions (CSS only — no JS timers):**
+- Card lift on hover: `transform: translateY(-2px); box-shadow: var(--shadow-lg)` — 120ms ease-out. **Note: `will-change: transform` should be added to `.lead-card` to prevent paint thrashing on the list**
+- Tab indicator slide: sidebar rail active indicator is a `<span class="tab-indicator">` absolutely positioned within the rail, transforms via `translateY()` driven by a CSS custom property `--tab-index` set inline from React. This requires one line of JS (`style="--tab-index: {tabIndex}"`) but keeps the animation in CSS
+- Score badge pulse on load: `@keyframes score-pulse` animation on `.score-badge`, `animation-iteration-count: 1`, `animation-fill-mode: forwards`. **Key implementation detail: the animation must not replay on re-renders.** Apply the animation class only when a lead first enters the list — use a `useRef<Set<string>>` in `LeadList` tracking which `business_id`s have been animated; add class only if not in the set; add to set immediately
+- Detail rail slide-in: handled by the CSS grid column transition in 11-C. No additional animation needed
+- Status update flash: `<li>` gets class `saved-card--flash` for 200ms after status change, removed via `setTimeout`. CSS: `@keyframes status-flash { 0%,100% { background: transparent } 50% { background: var(--accent-dim) } }`
+
+**Error recovery (changes across all components):**
+
+Every error state in the current codebase is a plain text display with no action. The fix is consistent across all sites:
+
+```tsx
+{error && (
+  <div className="error-banner">
+    <IconAlert />
+    <span>{error}</span>
+    <button className="btn btn-ghost btn-sm" onClick={retryFn}>Retry</button>
+    <button className="btn btn-icon btn-sm" onClick={() => setError(null)}>×</button>
+  </div>
+)}
+```
+
+Sites requiring retry wiring:
+- `App.tsx` route tab error: retry = `() => loadLeads(routeId!)` (routeId is set when this error can appear)
+- `App.tsx` save error: retry = `() => onSaveLead(lastFailedLead)` — requires new `lastFailedLead` ref (set in `onSaveLead` catch before calling `setError`)
+- `RouteForm.tsx` submit error: retry = `submit` (the existing async function) — button is already disabled when loading, so double-submit is not possible
+- `TodayDashboard.tsx` load error: retry = `load` (the internal async function; expose via `const retryLoad = load` pattern)
+- `LeadDetail.tsx` validation error: retry = `handleValidate` (already defined in scope)
+- Export errors in `SavedLeads.tsx`: toasts are sufficient (transient); no inline retry needed
+
+**Loading states:**
+- Route creation: multi-step progress bar described in 11-B; no additional work here
+- Today dashboard: `loading` state already exists in `TodayDashboard.tsx`; add skeleton render when `loading && !data`
+- Saved leads: `loading` state needed — currently `SavedLeads.tsx` has no explicit loading state. Add `loading: boolean` state, set true at start of `loadSavedLeads()`, false on completion
+- Lead detail (notes + validation): both already have loading states (`validationLoading`); add skeleton rows for notes when `notes.length === 0 && notesLoading` — add `notesLoading: boolean` state initialized true, set false after `listNotes` resolves
+- Skeleton component: `<div class="skeleton-row">` with shimmer animation. Defined once in `app.css`; reused via className across all components. No shared React component needed
+
+**Onboarding replacement:**
+- `showOnboarding` state and the onboarding modal JSX in `App.tsx` (lines 576–630) are removed
+- `reproute_onboarding_seen_v1` localStorage key is kept but repurposed: when not set, empty state components render "extended" copy (more instructional); when set, render "compact" copy (shorter)
+- Empty state components (`LeadList`, `TodayDashboard`, `SavedLeads`) each receive an `isFirstRun: boolean` prop derived from `!localStorage.getItem('reproute_onboarding_seen_v1')` in `App.tsx`
+- When the first route is created (in `onCreated`), set `reproute_onboarding_seen_v1 = '1'` — this marks onboarding as seen after the rep has completed the first meaningful action
+- `showInstallHint` state and install hint banner in `App.tsx` (lines 335–351): moved to a `<div class="sidebar-install-hint">` inside the sidebar footer, styled as a compact 1-line dismissible row — not a full banner in the scroll area
+
+**PWA install prompt (separate from onboarding):**
+- iOS: the current install hint text is correct but unstyled. In the new design it becomes a compact chip in the sidebar footer with an "×" dismiss. No behavior change, only style change
+- Android/Chrome: `beforeinstallprompt` event handling is not currently implemented. Add a `useEffect` in `App.tsx` that captures the event: `window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); setInstallPromptEvent(e) })`. When `installPromptEvent` is set, render an "Install App" button in the sidebar footer that calls `installPromptEvent.prompt()`. This provides a native install prompt on Android without the current text-only instruction
+
+---
+
+**Implementation sequence within Phase 11:**
+
+Each step is a discrete, testable, mergeable unit. Steps within a gate are parallel-safe among themselves.
+
+**Gate 1 — Foundation (must land first; everything depends on these tokens):**
+
+| Step | Scope | Files | Risk |
+|---|---|---|---|
+| 1 | Design tokens, typography (`@import DM Sans`), WCAG fix for `--text-muted`, PWA manifest update | `app.css`, `vite.config.ts` | Low |
+| 2 | Toast system (`toast.ts` + `#toast-root` in App.tsx) | `src/lib/toast.ts`, `App.tsx`, `app.css` | Low |
+| 3 | App shell: topbar 48px, route breadcrumb, offline dot, Clerk `appearance` prop | `App.tsx`, `main.tsx`, `app.css` | Low |
+| 4 | Sidebar: icon rail (desktop) + bottom nav (mobile), sidebar footer, offline banner (replaces per-component banners), empty map state overlay | `App.tsx`, `app.css` | Medium — removes existing tab bar JSX; must verify all three tabs still reachable |
+
+**Gate 2 — Core components (parallel-safe after Gate 1):**
+
+| Step | Scope | Files | Risk |
+|---|---|---|---|
+| 5 | Route form Phase A/B layout, corridor segmented control, loading progress, recent routes | `RouteForm.tsx`, `App.tsx`, `app.css` | Medium |
+| 6 | Filter chip bar, popover pattern | `App.tsx`, `app.css` | Medium |
+| 7 | Lead card redesign: layout, overflow menu, note expansion, skeleton, `initialStatus` param | `LeadList.tsx`, `App.tsx`, `app.css` | Medium |
+| 8 | Today tab redesign, skeleton, `onResumeRoute` prop | `TodayDashboard.tsx`, `App.tsx`, `app.css` | Low |
+| 9 | Saved tab: status pills, sort popover, export menu, search, overdue border, inline stepper, swipe | `SavedLeads.tsx`, `app.css` | High — most surface area; test swipe on iOS Safari specifically |
+
+**Gate 3 — Map and detail (sequential within gate; map must land before live location):**
+
+| Step | Scope | Files | Risk |
+|---|---|---|---|
+| 10 | Map marker redesign: circle+text layers, blue collar dot, pulse layer, clustering, fit-route button | `MapPanel.tsx`, `app.css` | High — glyph source required for text labels; verify raster style fallback |
+| 11 | Detail panel right-rail split (desktop), `map.resize()` on transition, mobile bottom sheet improvement | `App.tsx`, `LeadDetail.tsx`, `app.css` | High — grid transition + map resize must be verified at 1280px and 1024px |
+| 12 | Detail interior: status segmented control, score breakdown `<details>`, contact actions, quick-call log, owner edit | `LeadDetail.tsx`, `app.css` | Medium |
+| 13 | Live location mode: `watchPosition`, user-position dot (`maplibregl.Marker`), haversine sort, nearby badge, visit check-in | `App.tsx`, `MapPanel.tsx`, `LeadDetail.tsx`, `app.css` | Medium — test `watchPosition` cleanup on iOS |
+
+**Gate 4 — Polish (final pass; parallel-safe):**
+
+| Step | Scope | Files | Risk |
+|---|---|---|---|
+| 14 | Error recovery: inline retry + dismiss on all error banners | `App.tsx`, `RouteForm.tsx`, `TodayDashboard.tsx`, `LeadDetail.tsx`, `SavedLeads.tsx` | Low |
+| 15 | Loading skeletons: Today, Saved, detail notes | `TodayDashboard.tsx`, `SavedLeads.tsx`, `LeadDetail.tsx`, `app.css` | Low |
+| 16 | Micro-interactions: card lift, tab indicator, score badge pulse, status flash | `app.css`, `LeadList.tsx`, `SavedLeads.tsx` | Low |
+| 17 | Onboarding replacement: remove modal, `isFirstRun` prop, extended/compact empty states, PWA install prompt | `App.tsx`, `LeadList.tsx`, `TodayDashboard.tsx`, `SavedLeads.tsx` | Low |
+| 18 | Accessibility pass: tap targets, focus rings, ARIA labels, focus trap in detail panel | All component files, `app.css` | Low |
+
+---
+
+**Known hard constraints and failure modes to verify explicitly:**
+
+1. **Map text labels on raster style** — `lead-labels` symbol layer requires a `glyphs` URL in the map style. The current `RASTER_STYLE` has no `glyphs` field. If not addressed, score numbers will be missing on the raster fallback. Fix before merging Step 10.
+2. **`map.resize()` timing** — must fire after the CSS grid transition completes (180ms). Use `setTimeout(180 + 10ms buffer)`. If the map container hasn't fully settled, `resize()` may use stale dimensions. Verify by inspecting canvas size in DevTools after opening the detail panel at 1280px.
+3. **Swipe gesture vs. scroll conflict on iOS Safari** — `touch-action: pan-y` on list items is the correct fix, but iOS Safari has historically ignored this on elements with `overflow: auto` ancestors. Test the saved leads list swipe on a real iOS device, not just browser simulation.
+4. **`watchPosition` on iOS background tab** — browsers throttle or pause `watchPosition` when the app is backgrounded. The "you are here" dot will become stale. This is acceptable and expected behavior; add a visual indicator (dot fades to 50% opacity when last position update is > 30s old).
+5. **`SavedLead` type missing coordinates** — if the backend does not return `lat`/`lng` on saved leads, the already-worked map markers feature cannot be implemented without geocoding. Verify the backend schema before committing to this sub-feature. If coordinates are absent, stub the `savedLeads` prop on `MapPanel` with an empty array and mark the feature deferred.
+6. **Clerk `appearance` prop API** — Clerk v5 (`@clerk/clerk-react@5.25.2`) supports `appearance` on `<UserButton>`. Verify the exact prop shape in the Clerk v5 docs before implementing (the API changed between v4 and v5).
+7. **Score tooltip localStorage key** — `reproute_score_tooltip_seen_v1` is currently managed inside `LeadList.tsx`. The card redesign must not inadvertently reset or ignore this key. Preserve the `tooltipLeadId` state and its logic exactly; only move the tooltip render position (from below the card top row to below the score circle in the new layout).
+
+---
+
+**What this phase explicitly does NOT do:**
+- No changes to `client.ts` API functions (except adding the `onReloadRoute` call path, which uses existing `fetchLeads`)
+- No new npm dependencies
+- No changes to `offlineQueue.ts` internals — only call sites change (offline banner moves to App.tsx)
+- No map tile source or style spec changes beyond the `glyphs` addition to `RASTER_STYLE`
+- No Clerk auth flow changes (only `appearance` prop styling)
+- No backend scoring or routing logic changes
+- Calendar integration → Phase 12
+- Push notifications → Phase 12
+- Day-planning route optimizer → Phase 12
+- Full-text note search (backend) → Phase 12
+- Server-side proximity filtering (backend) → Phase 12 (stub only in Phase 11)
+
+---
+
+**Test focus:**
+- **Regression (highest priority):** all existing save, note, status, follow-up date, export, and offline queue flows must work identically after the redesign. Run the complete existing test suite after each gate
+- **Offline queue integrity:** after Step 4 (sidebar offline banner replaces per-component banners), verify queue count is accurate, retry button flushes correctly, and per-component banner JSX is fully removed without residual rendering
+- **Map stability:** after Step 10, verify route line still renders, lead markers are clickable, selection updates correctly, and `onSelectLead` ref pattern (preventing map reinit on App re-render) is preserved
+- **Detail panel resize:** after Step 11, open and close detail panel at 1280px, 1024px, and 768px — verify map does not flicker or show white during the transition
+- **Swipe gestures:** test on a real iOS Safari device (not simulator) — verify vertical scroll is not blocked, horizontal swipe triggers status change, and the gesture does not conflict with the filter chip bar horizontal scroll above
+- **`watchPosition` cleanup:** toggle field session on and off 5 times rapidly — verify no duplicate `watchPosition` listeners accumulate (check with `DevTools > Sources > Event Listeners`)
+- **Score tooltip:** verify `reproute_score_tooltip_seen_v1` still fires once on first score badge tap, does not repeat, and dismisses correctly after the card layout change
+- **Toast cap:** trigger 5 toasts in rapid succession — verify only 3 are visible simultaneously; 4th and 5th appear as earlier ones dismiss
+- **Skeleton timing:** on a fast connection, verify skeleton cards do not flash (render only if load > 200ms — implement with a `useEffect` that sets `showSkeleton` after a 200ms `setTimeout`, cancelled if data arrives sooner)
+
+**Exit criteria:**
+- Full end-to-end flow completable on mobile (iPhone SE, 375px) in under 3 minutes: open app → create route → review leads → save 3 leads → log a note → set a follow-up → check Today tab
+- All Phase 4/5/10 functionality accessible and correct after redesign (zero regressions on existing test suite)
+- Live location mode renders "you are here" dot, reorders list by proximity, and `watchPosition` cleanup verified (no listener leak)
+- Map clustering active at zoom ≤ 11; individual markers with score numbers visible at zoom ≥ 12 (or text labels gracefully absent on raster style with a documented note)
+- Swipe-to-advance-status works on iOS Safari 17+ and Android Chrome 120+; vertical scroll unaffected
+- Detail right-rail opens and closes without map flicker at 1280px viewport
+- Error states on all mutation surfaces include inline retry + dismiss
+- Toast notifications cap at 3, auto-dismiss, and render for all documented trigger types
+- Onboarding modal removed; extended empty states render on first run; standard empty states on subsequent runs
+- Android Chrome PWA install prompt appears when `beforeinstallprompt` fires
+- Accessibility: all interactive elements ≥ 44px tap target; focus rings visible on keyboard navigation; ARIA labels on all icon-only controls
+- `npm run typecheck` and `npm run build` pass clean after every gate
+
+**Blocking dependencies:** Phase 10 exit criteria met; pre-implementation decisions (#1–#5 above) recorded before any code is written
+
+---
+
 ## Phase Status Table
 
 | Phase | Name | Status | Confidence |
@@ -876,6 +1294,7 @@ MVP is complete when all are true:
 | 8 | MVP verification and QA | Not started | Low |
 | 9 | Pilot and launch | Not started | Low |
 | 10 | Lead intelligence — sorting, grouping, blue-collar, owner contact | Code complete — evidence pending | Medium |
+| 11 | UI overhaul + field workflow intelligence | Not started | Low |
 
 ---
 

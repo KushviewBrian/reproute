@@ -4,13 +4,22 @@ import { createRoute, geocode, reverseGeocode } from "../api/client";
 
 type ResolvedLocation = { label: string; lat: number; lng: number };
 
+type RecentRoute = { routeId: string; label: string; leadCount: number; createdAt: string };
+
 type Props = {
   token?: string;
   corridor: number;
   waypoints: string[];
   onWaypointsChange: (waypoints: string[]) => void;
-  onCreated: (created: { routeId: string; routeGeoJson: GeoJSON.LineString }) => void;
+  onCreated: (created: { routeId: string; routeGeoJson: GeoJSON.LineString; originLabel: string; destLabel: string }) => void;
+  routeId?: string | null;
+  routeLabel?: string;
+  onEditRoute?: () => void;
+  recentRoutes?: RecentRoute[];
+  onReloadRoute?: (routeId: string) => void;
 };
+
+type LoadingStep = null | "geocoding" | "routing" | "prospects";
 
 function IconLocate() {
   return (
@@ -44,6 +53,35 @@ function IconX() {
   );
 }
 
+function IconClock() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+    </svg>
+  );
+}
+
+function IconChevron({ open }: { open: boolean }) {
+  return (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+      style={{ transform: open ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.15s" }}>
+      <polyline points="6 9 12 15 18 9" />
+    </svg>
+  );
+}
+
+const STEP_LABELS: Record<NonNullable<LoadingStep>, string> = {
+  geocoding: "Resolving addresses…",
+  routing: "Building route…",
+  prospects: "Finding prospects…",
+};
+
+const STEP_WIDTHS: Record<NonNullable<LoadingStep>, string> = {
+  geocoding: "33%",
+  routing: "66%",
+  prospects: "90%",
+};
+
 async function resolveAddress(text: string, token?: string): Promise<ResolvedLocation> {
   const trimmed = text.trim();
   const coordMatch = trimmed.match(/^(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)$/);
@@ -66,18 +104,31 @@ async function resolveAddress(text: string, token?: string): Promise<ResolvedLoc
   return data.results[0];
 }
 
-export function RouteForm({ token, corridor, waypoints, onWaypointsChange, onCreated }: Props) {
+function formatDate(iso: string): string {
+  try {
+    return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  } catch {
+    return "";
+  }
+}
+
+export function RouteForm({
+  token, corridor, waypoints, onWaypointsChange, onCreated,
+  routeId, routeLabel, onEditRoute, recentRoutes = [], onReloadRoute,
+}: Props) {
   const [originText, setOriginText] = useState("");
   const [destText, setDestText] = useState("");
   const [originSuggestions, setOriginSuggestions] = useState<string[]>([]);
   const [destSuggestions, setDestSuggestions] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingStep, setLoadingStep] = useState<LoadingStep>(null);
   const [locating, setLocating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [waypointsOpen, setWaypointsOpen] = useState(false);
+  const [recentOpen, setRecentOpen] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const prevLenRef = useRef(waypoints.length);
 
-  // Scroll into view when a new waypoint is added externally (e.g. "+ Stop")
   useEffect(() => {
     if (waypoints.length > prevLenRef.current) {
       bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -89,34 +140,24 @@ export function RouteForm({ token, corridor, waypoints, onWaypointsChange, onCre
 
   useEffect(() => {
     const trimmed = originText.trim();
-    if (trimmed.length < 3) {
-      setOriginSuggestions([]);
-      return;
-    }
+    if (trimmed.length < 3) { setOriginSuggestions([]); return; }
     const timer = window.setTimeout(async () => {
       try {
         const data = await geocode(trimmed, token);
         setOriginSuggestions(data.results.slice(0, 5).map((r) => r.label));
-      } catch {
-        setOriginSuggestions([]);
-      }
+      } catch { setOriginSuggestions([]); }
     }, 300);
     return () => window.clearTimeout(timer);
   }, [originText, token]);
 
   useEffect(() => {
     const trimmed = destText.trim();
-    if (trimmed.length < 3) {
-      setDestSuggestions([]);
-      return;
-    }
+    if (trimmed.length < 3) { setDestSuggestions([]); return; }
     const timer = window.setTimeout(async () => {
       try {
         const data = await geocode(trimmed, token);
         setDestSuggestions(data.results.slice(0, 5).map((r) => r.label));
-      } catch {
-        setDestSuggestions([]);
-      }
+      } catch { setDestSuggestions([]); }
     }, 300);
     return () => window.clearTimeout(timer);
   }, [destText, token]);
@@ -125,27 +166,20 @@ export function RouteForm({ token, corridor, waypoints, onWaypointsChange, onCre
     setLocating(true);
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
-        const lat = pos.coords.latitude;
-        const lng = pos.coords.longitude;
+        const { latitude: lat, longitude: lng } = pos.coords;
         try {
           const reversed = await reverseGeocode(lat, lng, token);
-          const first = reversed.results[0];
-          if (first?.label) {
-            setOriginText(first.label);
-          } else {
-            setOriginText(`${lat.toFixed(5)}, ${lng.toFixed(5)}`);
-          }
+          setOriginText(reversed.results[0]?.label ?? `${lat.toFixed(5)}, ${lng.toFixed(5)}`);
         } catch {
           setOriginText(`${lat.toFixed(5)}, ${lng.toFixed(5)}`);
         } finally {
           setLocating(false);
         }
       },
-      (positionError) => {
-        const denied = positionError.code === positionError.PERMISSION_DENIED;
+      (posErr) => {
         setError(
-          denied
-            ? "Location access denied — enable it in your browser settings, or type your address manually."
+          posErr.code === posErr.PERMISSION_DENIED
+            ? "Location access denied — enable it in your browser settings."
             : "Couldn't get your current location — please enter your address manually.",
         );
         setLocating(false);
@@ -154,28 +188,21 @@ export function RouteForm({ token, corridor, waypoints, onWaypointsChange, onCre
     );
   }
 
-  function addWaypoint() {
-    onWaypointsChange([...waypoints, ""]);
-  }
-
-  function removeWaypoint(i: number) {
-    onWaypointsChange(waypoints.filter((_, idx) => idx !== i));
-  }
-
-  function updateWaypoint(i: number, value: string) {
-    onWaypointsChange(waypoints.map((w, idx) => (idx === i ? value : w)));
-  }
+  function addWaypoint() { onWaypointsChange([...waypoints, ""]); }
+  function removeWaypoint(i: number) { onWaypointsChange(waypoints.filter((_, idx) => idx !== i)); }
+  function updateWaypoint(i: number, value: string) { onWaypointsChange(waypoints.map((w, idx) => (idx === i ? value : w))); }
 
   async function submit() {
     setLoading(true);
     setError(null);
+    setLoadingStep("geocoding");
     try {
       const originLoc = await resolveAddress(originText, token);
       const destLoc = await resolveAddress(destText, token);
       const resolvedWaypoints = await Promise.all(
         waypoints.filter((w) => w.trim()).map((w) => resolveAddress(w, token))
       );
-
+      setLoadingStep("routing");
       const created = await createRoute(
         {
           origin_label: originLoc.label,
@@ -189,127 +216,196 @@ export function RouteForm({ token, corridor, waypoints, onWaypointsChange, onCre
         },
         token,
       );
-      onCreated({ routeId: created.route_id, routeGeoJson: created.route_geojson });
+      setLoadingStep("prospects");
+      onCreated({
+        routeId: created.route_id,
+        routeGeoJson: created.route_geojson,
+        originLabel: originLoc.label,
+        destLabel: destLoc.label,
+      });
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to create route";
       setError(
-        msg.startsWith("401")
-          ? "Your session has expired — please sign in again."
-          : msg.startsWith("429")
-          ? "Too many requests — wait a moment and try again."
-          : msg,
+        msg.startsWith("401") ? "Your session has expired — please sign in again."
+        : msg.startsWith("429") ? "Too many requests — wait a moment and try again."
+        : msg,
       );
     } finally {
       setLoading(false);
+      setLoadingStep(null);
     }
   }
 
+  // Phase B: route is active
+  if (routeId) {
+    return (
+      <div className="route-summary-bar">
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div className="route-summary-label">{routeLabel || "Active route"}</div>
+          <div className="route-summary-meta">Route active</div>
+        </div>
+        {onEditRoute && (
+          <button className="btn btn-ghost btn-sm" onClick={onEditRoute}>
+            Edit route
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  // Phase A: no route
   return (
     <div className="route-form">
-      <h2>Plan Route</h2>
+      <div className="route-form-title">Plan Route</div>
 
-      <div className="form-field">
-        <label htmlFor="origin-input">From</label>
-        <div className="input-row">
-          <input
-            id="origin-input"
-            className="form-input"
-            type="text"
-            list="origin-suggestions"
-            placeholder="Start address, city, or zip"
-            value={originText}
-            onChange={(e) => setOriginText(e.target.value)}
-            disabled={loading}
-          />
-          <datalist id="origin-suggestions">
-            {originSuggestions.map((s) => (
-              <option key={s} value={s} />
-            ))}
-          </datalist>
-          <button
-            type="button"
-            className="btn btn-icon locate-btn"
-            title="Use my current location"
-            onClick={useMyLocation}
-            disabled={loading || locating}
-          >
-            {locating ? <span className="spinner" /> : <IconLocate />}
-          </button>
+      {/* FROM / TO with route-line glyph */}
+      <div className="route-inputs-wrap">
+        <div className="route-line-glyph">
+          <div className="route-line-glyph-dot" />
+          <div className="route-line-glyph-line" />
+          <div className="route-line-glyph-dot dest" />
         </div>
-      </div>
+        <div className="route-inputs-fields">
+          <div className="form-field">
+            <label htmlFor="origin-input">From</label>
+            <div className="input-row">
+              <input
+                id="origin-input"
+                className="form-input"
+                type="text"
+                list="origin-suggestions"
+                placeholder="Start address or city"
+                value={originText}
+                onChange={(e) => setOriginText(e.target.value)}
+                disabled={loading}
+              />
+              <datalist id="origin-suggestions">
+                {originSuggestions.map((s) => <option key={s} value={s} />)}
+              </datalist>
+              <button
+                type="button"
+                className="btn btn-icon locate-btn"
+                title="Use my current location"
+                aria-label="Use my current location"
+                onClick={useMyLocation}
+                disabled={loading || locating}
+              >
+                {locating ? <span className="spinner" /> : <IconLocate />}
+              </button>
+            </div>
+          </div>
 
-      {waypoints.map((wp, i) => (
-        <div className="form-field" key={i}>
-          <label>Stop {i + 1}</label>
-          <div className="input-row">
+          {/* Waypoints */}
+          {waypointsOpen && waypoints.map((wp, i) => (
+            <div className="form-field" key={i}>
+              <label>Stop {i + 1}</label>
+              <div className="input-row">
+                <input
+                  className="form-input"
+                  type="text"
+                  placeholder="Address, city, or coordinates"
+                  value={wp}
+                  onChange={(e) => updateWaypoint(i, e.target.value)}
+                  disabled={loading}
+                />
+                <button
+                  type="button"
+                  className="btn btn-icon"
+                  aria-label="Remove stop"
+                  onClick={() => removeWaypoint(i)}
+                  disabled={loading}
+                >
+                  <IconX />
+                </button>
+              </div>
+            </div>
+          ))}
+
+          <div className="form-field">
+            <label htmlFor="dest-input">To</label>
             <input
+              id="dest-input"
               className="form-input"
               type="text"
-              placeholder="Address, city, or coordinates"
-              value={wp}
-              onChange={(e) => updateWaypoint(i, e.target.value)}
+              list="dest-suggestions"
+              placeholder="End address or city"
+              value={destText}
+              onChange={(e) => setDestText(e.target.value)}
               disabled={loading}
             />
-            <button
-              type="button"
-              className="btn btn-icon"
-              title="Remove stop"
-              onClick={() => removeWaypoint(i)}
-              disabled={loading}
-            >
-              <IconX />
-            </button>
+            <datalist id="dest-suggestions">
+              {destSuggestions.map((s) => <option key={s} value={s} />)}
+            </datalist>
           </div>
         </div>
-      ))}
-
-      <div className="form-field">
-        <label htmlFor="dest-input">To</label>
-        <input
-          id="dest-input"
-          className="form-input"
-          type="text"
-          list="dest-suggestions"
-          placeholder="End address, city, or zip"
-          value={destText}
-          onChange={(e) => setDestText(e.target.value)}
-          disabled={loading}
-        />
-        <datalist id="dest-suggestions">
-          {destSuggestions.map((s) => (
-            <option key={s} value={s} />
-          ))}
-        </datalist>
       </div>
 
+      {/* Waypoints toggle */}
       <button
         type="button"
-        className="btn btn-ghost btn-sm"
-        style={{ alignSelf: "flex-start", marginBottom: "0.25rem" }}
-        onClick={addWaypoint}
+        className="waypoints-toggle"
+        onClick={() => {
+          if (!waypointsOpen) { addWaypoint(); setWaypointsOpen(true); }
+          else setWaypointsOpen(false);
+        }}
         disabled={loading}
       >
-        <IconPlus /> Add stop
+        <IconPlus />
+        {waypointsOpen ? "Hide stops" : "Add stops"}
+        {waypoints.length > 0 && waypointsOpen && (
+          <span style={{ marginLeft: "0.2rem", fontSize: "0.65rem", color: "var(--text-muted)" }}>({waypoints.length})</span>
+        )}
       </button>
 
       <div ref={bottomRef} />
 
+      {/* Loading progress */}
+      {loading && loadingStep && (
+        <div>
+          <div className="route-progress-bar">
+            <div className="route-progress-fill" style={{ width: STEP_WIDTHS[loadingStep] }} />
+          </div>
+          <div className="route-progress-label">{STEP_LABELS[loadingStep]}</div>
+        </div>
+      )}
+
       {error && (
-        <p style={{ fontSize: "0.75rem", color: "#b91c1c", margin: "0.375rem 0" }}>{error}</p>
+        <p style={{ fontSize: "0.75rem", color: "var(--accent-danger)", margin: "0.25rem 0" }}>{error}</p>
       )}
 
       <button
         className="btn btn-primary"
-        style={{ marginTop: "0.25rem" }}
+        style={{ marginTop: "0.125rem" }}
         disabled={!canSubmit}
         onClick={submit}
       >
         {loading ? (
-          <><span className="spinner" /> Finding prospects…</>
+          <><span className="spinner" /> {loadingStep ? STEP_LABELS[loadingStep] : "Working…"}</>
         ) : (
           <><IconSearch /> Find Prospects</>
         )}
       </button>
+
+      {/* Recent routes */}
+      {recentRoutes.length > 0 && (
+        <details className="recent-routes-toggle" open={recentOpen} onToggle={(e) => setRecentOpen((e.target as HTMLDetailsElement).open)}>
+          <summary>
+            <IconClock />
+            Recent routes
+            <IconChevron open={recentOpen} />
+          </summary>
+          {recentRoutes.map((r) => (
+            <button
+              key={r.routeId}
+              className="recent-route-btn"
+              onClick={() => onReloadRoute?.(r.routeId)}
+            >
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{r.label}</span>
+              <span className="recent-route-meta">{r.leadCount} leads · {formatDate(r.createdAt)}</span>
+            </button>
+          ))}
+        </details>
+      )}
     </div>
   );
 }

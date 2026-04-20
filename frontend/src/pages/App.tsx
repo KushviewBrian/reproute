@@ -1,5 +1,5 @@
 import { SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/clerk-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { createNote, fetchLeads, getValidationState, patchRoute, saveLead, type Lead, type ValidationStateResponse } from "../api/client";
 import { LeadDetail, leadToDetail, savedLeadToDetail, type DetailLead } from "../components/LeadDetail";
@@ -8,21 +8,20 @@ import { MapPanel } from "../components/MapPanel";
 import { RouteForm } from "../components/RouteForm";
 import { SavedLeads } from "../components/SavedLeads";
 import { TodayDashboard } from "../components/TodayDashboard";
+import { ToastContainer } from "../components/ToastContainer";
 import { cacheRouteLeads, readCachedRouteLeads } from "../lib/leadCache";
-import { flushQueuedNotes, flushQueuedStatusChanges } from "../lib/offlineQueue";
+import { flushQueuedNotes, flushQueuedStatusChanges, getQueuedCount, QUEUE_UPDATED_EVENT } from "../lib/offlineQueue";
+import { toast } from "../lib/toast";
 
 type Tab = "today" | "route" | "saved";
+
+type RecentRoute = { routeId: string; label: string; leadCount: number; createdAt: string };
 
 type AppProps = {
   token?: string;
   refreshToken?: () => Promise<string | undefined>;
 };
 
-
-/**
- * Converts any thrown API error into a human-readable, actionable message.
- * Branches on the status prefix that client.ts embeds in every non-2xx error message.
- */
 function toUserMessage(err: unknown, fallback: string): string {
   const msg = err instanceof Error ? err.message : "";
   if (!msg) return fallback;
@@ -34,10 +33,23 @@ function toUserMessage(err: unknown, fallback: string): string {
   return msg;
 }
 
+function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371000;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// ─── Icons ────────────────────────────────────────────────────────────────── //
+
 function IconRoute() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M3 12h18M3 6h18M3 18h18" />
+      <circle cx="6" cy="19" r="2"/><circle cx="18" cy="5" r="2"/>
+      <path d="M6 17V9a2 2 0 0 1 2-2h8"/>
     </svg>
   );
 }
@@ -80,17 +92,63 @@ function IconAlert() {
 
 function IconDatabase() {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
     </svg>
   );
+}
+
+function IconFit() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+    </svg>
+  );
+}
+
+function IconLocation() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>
+    </svg>
+  );
+}
+
+function IconSync() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+    </svg>
+  );
+}
+
+const RECENT_ROUTES_KEY = "reproute_recent_routes_v1";
+const INSTALL_DISMISSED_KEY = "reproute_install_hint_dismissed";
+const ONBOARDING_KEY = "reproute_onboarding_seen_v1";
+
+function readRecentRoutes(): RecentRoute[] {
+  try {
+    return JSON.parse(localStorage.getItem(RECENT_ROUTES_KEY) ?? "[]");
+  } catch {
+    return [];
+  }
+}
+
+function writeRecentRoute(r: RecentRoute) {
+  const existing = readRecentRoutes().filter((x) => x.routeId !== r.routeId);
+  localStorage.setItem(RECENT_ROUTES_KEY, JSON.stringify([r, ...existing].slice(0, 5)));
 }
 
 export function App({ token, refreshToken }: AppProps) {
   const [tab, setTab] = useState<Tab>("today");
   const [routeId, setRouteId] = useState<string | null>(null);
   const [routeGeoJson, setRouteGeoJson] = useState<GeoJSON.LineString | null>(null);
+  const [routeLabel, setRouteLabel] = useState<string>("");
   const [leads, setLeads] = useState<Lead[]>([]);
+  const [leadsLoading, setLeadsLoading] = useState(false);
+
+  // Filters
   const [minScore, setMinScore] = useState(40);
   const [hasPhone, setHasPhone] = useState<boolean | undefined>(undefined);
   const [hasWebsite, setHasWebsite] = useState<boolean | undefined>(undefined);
@@ -98,34 +156,53 @@ export function App({ token, refreshToken }: AppProps) {
   const [insuranceClass, setInsuranceClass] = useState<string>("");
   const [sortBy, setSortBy] = useState<"score" | "business_type">("score");
   const [corridor, setCorridor] = useState(1609);
+  const [blueCollar, setBlueCollar] = useState<boolean | undefined>(undefined);
+
   const [selectedLead, setSelectedLead] = useState<DetailLead | null>(null);
   const [waypoints, setWaypoints] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [cacheMeta, setCacheMeta] = useState<string | null>(null);
   const [savedCount, setSavedCount] = useState(0);
-  const [showInstallHint, setShowInstallHint] = useState(false);
-  const [showOnboarding, setShowOnboarding] = useState(false);
   const [validationStates, setValidationStates] = useState<Record<string, ValidationStateResponse>>({});
-  const [blueCollar, setBlueCollar] = useState<boolean | undefined>(undefined);
 
+  // Queue
+  const [queueCount, setQueueCount] = useState(0);
+
+  // Install / onboarding
+  const [showInstallHint, setShowInstallHint] = useState(false);
+  const [installPromptEvent, setInstallPromptEvent] = useState<Event | null>(null);
+  const isFirstRun = !localStorage.getItem(ONBOARDING_KEY);
+
+  // Field session
+  const [fieldSession, setFieldSession] = useState(false);
+  const [currentPosition, setCurrentPosition] = useState<{ lat: number; lng: number } | null>(null);
+  const watchIdRef = useRef<number | null>(null);
+
+  // Map resize trigger
+  const [mapResizeTrigger, setMapResizeTrigger] = useState(0);
+
+  // Sync queue count
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const dismissed = window.localStorage.getItem("reproute_install_hint_dismissed");
-    if (!dismissed) {
-      setShowInstallHint(true);
-    }
+    setQueueCount(getQueuedCount());
+    function onQueueUpdate() { setQueueCount(getQueuedCount()); }
+    window.addEventListener(QUEUE_UPDATED_EVENT, onQueueUpdate);
+    return () => window.removeEventListener(QUEUE_UPDATED_EVENT, onQueueUpdate);
   }, []);
 
+  // Install hint
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const onboardingSeen = window.localStorage.getItem("reproute_onboarding_seen_v1");
-    if (!onboardingSeen) {
-      setShowOnboarding(true);
+    if (!localStorage.getItem(INSTALL_DISMISSED_KEY)) setShowInstallHint(true);
+    function onBeforeInstall(e: Event) {
+      e.preventDefault();
+      setInstallPromptEvent(e);
     }
+    window.addEventListener("beforeinstallprompt", onBeforeInstall);
+    return () => window.removeEventListener("beforeinstallprompt", onBeforeInstall);
   }, []);
 
+  // Offline queue flush
   useEffect(() => {
-    if (typeof window === "undefined" || !token) return;
+    if (!token) return;
     let cancelled = false;
     let flushInFlight = false;
 
@@ -133,21 +210,15 @@ export function App({ token, refreshToken }: AppProps) {
       if (cancelled || flushInFlight || !navigator.onLine) return;
       flushInFlight = true;
       try {
-        await Promise.allSettled([
-          flushQueuedNotes(token),
-          flushQueuedStatusChanges(token),
-        ]);
+        await Promise.allSettled([flushQueuedNotes(token), flushQueuedStatusChanges(token)]);
       } finally {
         flushInFlight = false;
       }
     }
 
     void flushOfflineQueues();
-    const interval = window.setInterval(() => {
-      void flushOfflineQueues();
-    }, 30_000);
+    const interval = window.setInterval(() => void flushOfflineQueues(), 30_000);
     window.addEventListener("online", flushOfflineQueues);
-
     return () => {
       cancelled = true;
       clearInterval(interval);
@@ -155,13 +226,48 @@ export function App({ token, refreshToken }: AppProps) {
     };
   }, [token]);
 
+  // Field session watchPosition
+  useEffect(() => {
+    return () => {
+      if (watchIdRef.current != null) navigator.geolocation.clearWatch(watchIdRef.current);
+    };
+  }, []);
+
+  function toggleFieldSession() {
+    if (fieldSession) {
+      if (watchIdRef.current != null) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+        watchIdRef.current = null;
+      }
+      setFieldSession(false);
+      setCurrentPosition(null);
+    } else {
+      watchIdRef.current = navigator.geolocation.watchPosition(
+        (pos) => setCurrentPosition({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+        () => {
+          toast.warn("Location access denied or unavailable");
+          setFieldSession(false);
+        },
+        { maximumAge: 15000, timeout: 10000 },
+      );
+      setFieldSession(true);
+    }
+  }
+
   function sortLeads(input: Lead[], mode: "score" | "business_type"): Lead[] {
     const next = [...input];
+    if (fieldSession && currentPosition) {
+      next.sort((a, b) => {
+        const distA = a.lat != null ? haversineMeters(currentPosition.lat, currentPosition.lng, a.lat, a.lng!) : Infinity;
+        const distB = b.lat != null ? haversineMeters(currentPosition.lat, currentPosition.lng, b.lat, b.lng!) : Infinity;
+        return distA - distB;
+      });
+      return next;
+    }
     if (mode === "business_type") {
       next.sort((a, b) => {
-        const classCmp = (a.insurance_class ?? "ZZZ").localeCompare(b.insurance_class ?? "ZZZ");
-        if (classCmp !== 0) return classCmp;
-        return b.final_score - a.final_score;
+        const c = (a.insurance_class ?? "ZZZ").localeCompare(b.insurance_class ?? "ZZZ");
+        return c !== 0 ? c : b.final_score - a.final_score;
       });
       return next;
     }
@@ -171,6 +277,7 @@ export function App({ token, refreshToken }: AppProps) {
 
   const loadLeads = useCallback(
     async (id: string) => {
+      setLeadsLoading(true);
       try {
         const data = await fetchLeads(id, token, {
           minScore,
@@ -185,11 +292,9 @@ export function App({ token, refreshToken }: AppProps) {
         const sorted = sortLeads(data.leads, sortBy);
         setLeads(sorted);
         cacheRouteLeads(id, sorted);
-        const hasV2 = sorted.some((lead) => lead.score_version === "v2");
+        const hasV2 = sorted.some((l) => l.score_version === "v2");
         setCacheMeta(
-          hasV2
-            ? null
-            : "Using v1 fallback for this route. Recreate or refresh route candidates to populate v2 scores.",
+          hasV2 ? null : "Using v1 fallback for this route. Recreate route to populate v2 scores.",
         );
         if (token) {
           Promise.allSettled(
@@ -212,50 +317,72 @@ export function App({ token, refreshToken }: AppProps) {
           return;
         }
         throw err;
+      } finally {
+        setLeadsLoading(false);
       }
     },
-    [token, minScore, hasPhone, hasWebsite, hasOwnerName, insuranceClass, sortBy, blueCollar],
+    [token, minScore, hasPhone, hasWebsite, hasOwnerName, insuranceClass, sortBy, blueCollar, fieldSession, currentPosition],
   );
 
-  async function onCreated(created: { routeId: string; routeGeoJson: GeoJSON.LineString }) {
+  async function onCreated(created: {
+    routeId: string;
+    routeGeoJson: GeoJSON.LineString;
+    originLabel: string;
+    destLabel: string;
+  }) {
     const id = created.routeId;
+    const label = `${created.originLabel} → ${created.destLabel}`;
     setRouteId(id);
     setRouteGeoJson(created.routeGeoJson);
+    setRouteLabel(label);
     setError(null);
+    localStorage.setItem(ONBOARDING_KEY, "1");
     try {
       await loadLeads(id);
+      writeRecentRoute({ routeId: id, label, leadCount: leads.length, createdAt: new Date().toISOString() });
+      toast.success("Route created");
     } catch (err) {
       setError(toUserMessage(err, "Failed to fetch leads"));
     }
   }
 
+  function onReloadRoute(id: string) {
+    setRouteId(id);
+    setError(null);
+    loadLeads(id).catch((err) => setError(toUserMessage(err, "Failed to load route")));
+  }
+
   async function onSaveLead(lead: Lead) {
     try {
       await saveLead({ business_id: lead.business_id, route_id: routeId ?? undefined }, token);
+      toast.success("Lead saved");
     } catch (err) {
-      setError(toUserMessage(err, "Failed to save lead"));
+      toast.error(toUserMessage(err, "Failed to save lead"));
     }
   }
 
-  async function onSaveLeadWithNote(lead: Lead, noteText: string) {
-    let savedOk = false;
+  async function onSaveLeadWithNote(lead: Lead, noteText: string, initialStatus?: string) {
+    let savedId: string | null = null;
     try {
-      await saveLead({ business_id: lead.business_id, route_id: routeId ?? undefined }, token);
-      savedOk = true;
-      await createNote(
-        {
-          business_id: lead.business_id,
-          route_id: routeId ?? undefined,
-          note_text: noteText,
-        },
-        token,
-      );
+      const saved = await saveLead({ business_id: lead.business_id, route_id: routeId ?? undefined }, token);
+      savedId = saved.id;
+      if (noteText) {
+        await createNote(
+          { business_id: lead.business_id, route_id: routeId ?? undefined, note_text: noteText },
+          token,
+        );
+      }
+      if (initialStatus && savedId) {
+        const { updateSavedLead } = await import("../api/client");
+        await updateSavedLead(savedId, { status: initialStatus }, token);
+      }
       setError(null);
+      toast.success(noteText ? "Saved with note" : "Lead saved");
     } catch (err) {
-      if (savedOk) {
-        setError("Lead saved, but note failed: " + toUserMessage(err, "unknown error"));
+      if (savedId) {
+        toast.warn("Lead saved, but note failed");
       } else {
-        setError(toUserMessage(err, "Failed to save lead"));
+        toast.error(toUserMessage(err, "Failed to save lead"));
       }
     }
   }
@@ -287,246 +414,260 @@ export function App({ token, refreshToken }: AppProps) {
     setTab("route");
   }
 
-  const corridorMiles = (corridor / 1609).toFixed(1);
+  // Trigger map resize when detail panel opens/closes
+  useEffect(() => {
+    const timer = setTimeout(() => setMapResizeTrigger((n) => n + 1), 190);
+    return () => clearTimeout(timer);
+  }, [selectedLead]);
 
+  async function handleManualSync() {
+    try {
+      await Promise.allSettled([flushQueuedNotes(token), flushQueuedStatusChanges(token)]);
+      toast.success("Synced");
+    } catch {
+      toast.error("Sync failed");
+    }
+  }
+
+  const corridorMiles = (corridor / 1609).toFixed(1);
+  const recentRoutes = readRecentRoutes();
+
+  // ─── App content ───────────────────────────────────────────────────────────
   const appContent = (
-    <div className="app-body">
+    <div className={`app-body${selectedLead ? " detail-open" : ""}`}>
+      {/* ── Sidebar ── */}
       <aside className="sidebar">
-        <div className="sidebar-tabs">
+        {/* Icon rail */}
+        <nav className="sidebar-rail" role="navigation" aria-label="Main navigation">
           <button
-            className={`sidebar-tab${tab === "today" ? " active" : ""}`}
+            className={`rail-btn${tab === "today" ? " active" : ""}`}
             onClick={() => setTab("today")}
+            aria-label="Today"
+            data-tooltip="Today"
           >
             <IconCalendar />
-            Today
           </button>
           <button
-            className={`sidebar-tab${tab === "route" ? " active" : ""}`}
+            className={`rail-btn${tab === "route" ? " active" : ""}`}
             onClick={() => setTab("route")}
+            aria-label="Route"
+            data-tooltip="Route"
           >
             <IconRoute />
-            Route
           </button>
           <button
-            className={`sidebar-tab${tab === "saved" ? " active" : ""}`}
+            className={`rail-btn${tab === "saved" ? " active" : ""}`}
             onClick={() => setTab("saved")}
+            aria-label={`Saved leads${savedCount > 0 ? `, ${savedCount} saved` : ""}`}
+            data-tooltip="Saved"
           >
             <IconBookmark />
-            Saved
             {savedCount > 0 && (
-              <span
-                style={{
-                  marginLeft: "0.35rem",
-                  fontSize: "0.65rem",
-                  fontWeight: 700,
-                  padding: "0.05rem 0.35rem",
-                  borderRadius: "100px",
-                  background: "var(--gray-200)",
-                  color: "var(--gray-700)",
-                }}
-              >
-                {savedCount}
-              </span>
+              <span className="rail-btn-badge" aria-hidden="true">{savedCount}</span>
             )}
           </button>
-        </div>
-
-        <div className="sidebar-scroll">
-          {showInstallHint && (
-            <div className="cache-banner" style={{ marginBottom: "0.5rem" }}>
-              <IconDatabase />
-              <span style={{ flex: 1 }}>
-                Install for faster access: Android Chrome menu → Install App. iPhone Safari share menu → Add to Home Screen.
-              </span>
-              <button
-                className="btn btn-ghost btn-sm"
-                onClick={() => {
-                  window.localStorage.setItem("reproute_install_hint_dismissed", "1");
-                  setShowInstallHint(false);
-                }}
-                style={{ marginLeft: "0.4rem", padding: "0.15rem 0.35rem" }}
-              >
-                Dismiss
-              </button>
-            </div>
+          {routeId && (
+            <button
+              className={`rail-btn${fieldSession ? " active" : ""}`}
+              onClick={toggleFieldSession}
+              aria-label={fieldSession ? "Stop field session" : "Start field session"}
+              data-tooltip={fieldSession ? "Stop session" : "Field mode"}
+              style={{ marginTop: "auto" }}
+            >
+              <IconLocation />
+            </button>
           )}
+        </nav>
 
-          {tab === "today" && (
-            <TodayDashboard
-              token={token}
-              onGoToRoute={() => setTab("route")}
-              onSelectLead={(sl) => setSelectedLead(savedLeadToDetail(sl))}
-            />
-          )}
-
-          {tab === "route" && (
-            <>
-              <RouteForm
-                onCreated={onCreated}
-                token={token}
-                corridor={corridor}
-                waypoints={waypoints}
-                onWaypointsChange={setWaypoints}
-              />
-
-              <div className="filter-strip">
-                <h3>Filters</h3>
-
-                <div className="filter-row">
-                  <span className="filter-label">Min score</span>
-                  <span className="filter-value">{minScore}</span>
-                </div>
-                <input
-                  className="range-input"
-                  type="range"
-                  min={0}
-                  max={100}
-                  value={minScore}
-                  onChange={(e) => setMinScore(Number(e.target.value))}
-                />
-
-                <div className="filter-row">
-                  <span className="filter-label">Corridor</span>
-                  <select
-                    className="form-select"
-                    style={{ width: "auto", fontSize: "0.75rem" }}
-                    value={corridor}
-                    onChange={(e) => onCorridorChange(Number(e.target.value))}
-                  >
-                    <option value={805}>0.5 mi</option>
-                    <option value={1609}>1.0 mi</option>
-                    <option value={3218}>2.0 mi</option>
-                  </select>
-                </div>
-
-                <div className="filter-row">
-                  <span className="filter-label">Contact info</span>
-                  <div className="toggle-group">
-                    <button
-                      className={`toggle-chip${hasPhone ? " active" : ""}`}
-                      onClick={() => { setHasPhone(hasPhone ? undefined : true); }}
-                    >
-                      Phone
-                    </button>
-                    <button
-                      className={`toggle-chip${hasWebsite ? " active" : ""}`}
-                      onClick={() => { setHasWebsite(hasWebsite ? undefined : true); }}
-                    >
-                      Website
-                    </button>
-                    <button
-                      className={`toggle-chip${hasOwnerName ? " active" : ""}`}
-                      onClick={() => { setHasOwnerName(hasOwnerName ? undefined : true); }}
-                    >
-                      Owner known
-                    </button>
-                  </div>
-                </div>
-
-                <div className="filter-row">
-                  <span className="filter-label">Blue collar</span>
-                  <button
-                    className={"toggle-chip" + (blueCollar ? " active" : "")}
-                    onClick={() => setBlueCollar(blueCollar ? undefined : true)}
-                    title="Only show blue-collar businesses (auto, trades, services)"
-                  >
-                    🔧 Blue collar only
-                  </button>
-                </div>
-
-                <div className="filter-row">
-                  <span className="filter-label">Business type</span>
-                  <select
-                    className="form-select"
-                    style={{ width: "auto", fontSize: "0.75rem" }}
-                    value={insuranceClass}
-                    onChange={(e) => setInsuranceClass(e.target.value)}
-                  >
-                    <option value="">All</option>
-                    <option value="Auto Service">Auto Service</option>
-                    <option value="Contractor / Trades">Contractor / Trades</option>
-                    <option value="Retail">Retail</option>
-                    <option value="Food & Beverage">Food & Beverage</option>
-                    <option value="Personal Services">Personal Services</option>
-                    <option value="Medical / Clinic">Medical / Clinic</option>
-                    <option value="Professional / Office">Professional / Office</option>
-                    <option value="Light Industrial">Light Industrial</option>
-                    <option value="Other Commercial">Other Commercial</option>
-                  </select>
-                </div>
-
-                <div className="filter-row">
-                  <span className="filter-label">Sort</span>
-                  <select
-                    className="form-select"
-                    style={{ width: "auto", fontSize: "0.75rem" }}
-                    value={sortBy}
-                    onChange={(e) => setSortBy(e.target.value as "score" | "business_type")}
-                  >
-                    <option value="score">Top score</option>
-                    <option value="business_type">Business type</option>
-                  </select>
-                </div>
-
-                <button className="btn btn-ghost btn-sm" style={{ alignSelf: "flex-end" }} onClick={onApplyFilters}>
-                  Apply
+        {/* Content panel */}
+        <div className="sidebar-content">
+          <div className="sidebar-scroll">
+            {/* Offline sync banner */}
+            {queueCount > 0 && (
+              <div className="sidebar-offline-banner">
+                <IconSync />
+                <span>{queueCount} pending — will sync when online</span>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={handleManualSync}
+                  style={{ padding: "0.15rem 0.4rem", fontSize: "0.65rem" }}
+                >
+                  Sync
                 </button>
               </div>
+            )}
 
-              {error && (
-                <div className="error-banner">
-                  <IconAlert />
-                  {error}
-                </div>
-              )}
-              {cacheMeta && (
-                <div className="cache-banner">
-                  <IconDatabase />
-                  {cacheMeta}
-                </div>
-              )}
-
-              <LeadList
-                leads={leads}
-                selectedLead={selectedLead}
-                onSave={onSaveLead}
-                onSaveWithNote={onSaveLeadWithNote}
-                onSelect={(l) => setSelectedLead(leadToDetail(l))}
-                onAddStop={onAddStop}
-                corridorMiles={corridorMiles}
-                validationStates={validationStates}
+            {/* Tab content */}
+            {tab === "today" && (
+              <TodayDashboard
+                token={token}
+                onGoToRoute={() => setTab("route")}
+                onSelectLead={(sl) => setSelectedLead(savedLeadToDetail(sl))}
+                onResumeRoute={(id) => {
+                  setRouteId(id);
+                  setTab("route");
+                  loadLeads(id).catch((err) => setError(toUserMessage(err, "Failed to load route")));
+                }}
+                isFirstRun={isFirstRun}
               />
-            </>
-          )}
+            )}
 
-          {tab === "saved" && (
-            <SavedLeads
-              token={token}
-              currentRouteId={routeId}
-              onCountChange={setSavedCount}
-              onSelectLead={(sl) => setSelectedLead(savedLeadToDetail(sl))}
-              onAddToRoute={(lead) => {
-                if (!lead.business_name) return;
-                const label = lead.address
-                  ? `${lead.business_name}, ${lead.address}`
-                  : lead.business_name;
-                setWaypoints((prev) => [...prev, label]);
-                setTab("route");
-              }}
-            />
-          )}
+            {tab === "route" && (
+              <>
+                <RouteForm
+                  onCreated={onCreated}
+                  token={token}
+                  corridor={corridor}
+                  waypoints={waypoints}
+                  onWaypointsChange={setWaypoints}
+                  routeId={routeId}
+                  routeLabel={routeLabel}
+                  onEditRoute={() => { setRouteId(null); setRouteGeoJson(null); setLeads([]); setRouteLabel(""); }}
+                  recentRoutes={recentRoutes}
+                  onReloadRoute={onReloadRoute}
+                />
+
+                {/* Route active: filter chips */}
+                {routeId && (
+                  <FilterChipBar
+                    minScore={minScore}
+                    setMinScore={setMinScore}
+                    hasPhone={hasPhone}
+                    setHasPhone={setHasPhone}
+                    hasWebsite={hasWebsite}
+                    setHasWebsite={setHasWebsite}
+                    hasOwnerName={hasOwnerName}
+                    setHasOwnerName={setHasOwnerName}
+                    blueCollar={blueCollar}
+                    setBlueCollar={setBlueCollar}
+                    insuranceClass={insuranceClass}
+                    setInsuranceClass={setInsuranceClass}
+                    sortBy={sortBy}
+                    setSortBy={setSortBy}
+                    onApply={onApplyFilters}
+                    corridor={corridor}
+                    onCorridorChange={onCorridorChange}
+                  />
+                )}
+
+                {error && (
+                  <div className="error-banner">
+                    <IconAlert />
+                    <span>{error}</span>
+                    <button className="btn btn-ghost btn-sm" onClick={() => routeId && loadLeads(routeId).catch((e) => setError(toUserMessage(e, "Retry failed")))}>Retry</button>
+                    <button className="btn btn-icon btn-sm" aria-label="Dismiss" onClick={() => setError(null)}>×</button>
+                  </div>
+                )}
+                {cacheMeta && (
+                  <div className="cache-banner">
+                    <IconDatabase />
+                    {cacheMeta}
+                  </div>
+                )}
+
+                <LeadList
+                  leads={leads}
+                  loading={leadsLoading}
+                  selectedLead={selectedLead}
+                  onSave={onSaveLead}
+                  onSaveWithNote={onSaveLeadWithNote}
+                  onSelect={(l) => setSelectedLead(leadToDetail(l))}
+                  onAddStop={onAddStop}
+                  corridorMiles={corridorMiles}
+                  validationStates={validationStates}
+                  userLat={currentPosition?.lat}
+                  userLng={currentPosition?.lng}
+                  isFirstRun={isFirstRun}
+                />
+              </>
+            )}
+
+            {tab === "saved" && (
+              <SavedLeads
+                token={token}
+                currentRouteId={routeId}
+                onCountChange={setSavedCount}
+                onSelectLead={(sl) => setSelectedLead(savedLeadToDetail(sl))}
+                onAddToRoute={(lead) => {
+                  if (!lead.business_name) return;
+                  const label = lead.address
+                    ? `${lead.business_name}, ${lead.address}`
+                    : lead.business_name;
+                  setWaypoints((prev) => [...prev, label]);
+                  setTab("route");
+                }}
+                isFirstRun={isFirstRun}
+              />
+            )}
+          </div>
+
+          {/* Sidebar footer */}
+          <div className="sidebar-footer">
+            {showInstallHint && !installPromptEvent && (
+              <span className="sidebar-install-hint">
+                Add to home screen for faster access
+              </span>
+            )}
+            {installPromptEvent && (
+              <button
+                className="btn btn-ghost btn-sm"
+                style={{ fontSize: "0.68rem", padding: "0.2rem 0.5rem" }}
+                onClick={() => {
+                  (installPromptEvent as any).prompt?.();
+                  setInstallPromptEvent(null);
+                }}
+              >
+                Install App
+              </button>
+            )}
+            {showInstallHint && (
+              <button
+                className="btn btn-icon btn-sm"
+                aria-label="Dismiss install hint"
+                style={{ marginLeft: "auto" }}
+                onClick={() => {
+                  localStorage.setItem(INSTALL_DISMISSED_KEY, "1");
+                  setShowInstallHint(false);
+                }}
+              >
+                ×
+              </button>
+            )}
+          </div>
         </div>
       </aside>
 
+      {/* ── Map ── */}
       <div className="map-area">
         <MapPanel
           routeGeoJson={routeGeoJson}
           leads={leads}
           selectedLead={selectedLead}
           onSelectLead={(l) => setSelectedLead(leadToDetail(l))}
+          userPosition={currentPosition}
+          resizeTrigger={mapResizeTrigger}
         />
+        {!routeId && (
+          <div className="map-empty-state" aria-hidden="true">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2">
+              <circle cx="6" cy="19" r="2"/><circle cx="18" cy="5" r="2"/>
+              <path d="M6 17V9a2 2 0 0 1 2-2h8"/>
+            </svg>
+            <p>Plan a route to discover prospects</p>
+          </div>
+        )}
+        {routeId && (
+          <button
+            className="map-fit-btn"
+            aria-label="Fit route on map"
+            onClick={() => setMapResizeTrigger((n) => n + 1)}
+          >
+            <IconFit /> Fit route
+          </button>
+        )}
       </div>
 
+      {/* ── Detail panel ── */}
       {selectedLead && (
         <LeadDetail
           lead={selectedLead}
@@ -534,8 +675,36 @@ export function App({ token, refreshToken }: AppProps) {
           token={token}
           refreshToken={refreshToken}
           onClose={() => setSelectedLead(null)}
+          userPosition={currentPosition}
         />
       )}
+
+      {/* ── Mobile bottom nav ── */}
+      <nav className="mobile-nav" aria-label="Main navigation">
+        <button
+          className={`mobile-nav-btn${tab === "today" ? " active" : ""}`}
+          onClick={() => setTab("today")}
+        >
+          <IconCalendar />
+          Today
+        </button>
+        <button
+          className={`mobile-nav-btn${tab === "route" ? " active" : ""}`}
+          onClick={() => setTab("route")}
+        >
+          <IconRoute />
+          Route
+        </button>
+        <button
+          className={`mobile-nav-btn${tab === "saved" ? " active" : ""}`}
+          onClick={() => setTab("saved")}
+        >
+          <span className={savedCount > 0 ? "mobile-nav-btn-badge" : ""} data-count={savedCount > 0 ? savedCount : undefined}>
+            <IconBookmark />
+          </span>
+          Saved
+        </button>
+      </nav>
     </div>
   );
 
@@ -543,17 +712,43 @@ export function App({ token, refreshToken }: AppProps) {
     <div className="app-shell">
       <header className="topbar">
         <div className="topbar-brand">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M3 12h18M3 6h18M3 18h18" />
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="6" cy="19" r="2"/><circle cx="18" cy="5" r="2"/>
+            <path d="M6 17V9a2 2 0 0 1 2-2h8"/>
           </svg>
           <div>
-            Rep<span>Route</span>
-            <div style={{ fontSize: "0.55rem", opacity: 0.5, letterSpacing: "0.05em", marginTop: "-2px" }}>by Kushview</div>
+            Rep<span className="topbar-brand-accent">Route</span>
+            <div className="topbar-brand-sub">by Kushview</div>
           </div>
         </div>
-        <SignedIn>
-          <UserButton />
-        </SignedIn>
+
+        <div className="topbar-route-status">
+          {routeId && routeLabel ? (
+            <>
+              <strong>{routeLabel}</strong>
+              {leads.length > 0 && <> · {leads.length} prospects</>}
+            </>
+          ) : (
+            "No active route"
+          )}
+        </div>
+
+        <div className="topbar-actions">
+          {queueCount > 0 && (
+            <span className="topbar-offline-dot" title={`${queueCount} changes pending sync`} />
+          )}
+          <SignedIn>
+            <UserButton
+              appearance={{
+                variables: {
+                  colorBackground: "var(--surface-1)",
+                  colorText: "var(--text-primary)",
+                  colorPrimary: "var(--accent)",
+                },
+              }}
+            />
+          </SignedIn>
+        </div>
       </header>
 
       <SignedOut>
@@ -572,62 +767,179 @@ export function App({ token, refreshToken }: AppProps) {
           </div>
         </div>
       </SignedOut>
+
       <SignedIn>{appContent}</SignedIn>
-      {showOnboarding && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(15, 23, 42, 0.55)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 80,
-            padding: "1rem",
-          }}
+
+      <ToastContainer />
+    </div>
+  );
+}
+
+// ─── Filter Chip Bar ───────────────────────────────────────────────────────── //
+
+type FilterChipBarProps = {
+  minScore: number; setMinScore: (v: number) => void;
+  hasPhone: boolean | undefined; setHasPhone: (v: boolean | undefined) => void;
+  hasWebsite: boolean | undefined; setHasWebsite: (v: boolean | undefined) => void;
+  hasOwnerName: boolean | undefined; setHasOwnerName: (v: boolean | undefined) => void;
+  blueCollar: boolean | undefined; setBlueCollar: (v: boolean | undefined) => void;
+  insuranceClass: string; setInsuranceClass: (v: string) => void;
+  sortBy: "score" | "business_type"; setSortBy: (v: "score" | "business_type") => void;
+  onApply: () => void;
+  corridor: number; onCorridorChange: (v: number) => void;
+};
+
+const INSURANCE_CLASSES = [
+  "", "Auto Service", "Contractor / Trades", "Retail", "Food & Beverage",
+  "Personal Services", "Medical / Clinic", "Professional / Office", "Light Industrial", "Other Commercial",
+];
+const INSURANCE_LABELS: Record<string, string> = {
+  "": "All types", "Auto Service": "Auto", "Contractor / Trades": "Trades", "Retail": "Retail",
+  "Food & Beverage": "F&B", "Personal Services": "Services", "Medical / Clinic": "Medical",
+  "Professional / Office": "Office", "Light Industrial": "Industrial", "Other Commercial": "Other",
+};
+
+const SORT_OPTIONS: { value: "score" | "business_type"; label: string }[] = [
+  { value: "score", label: "Top score" },
+  { value: "business_type", label: "Business type" },
+];
+
+function FilterChipBar({
+  minScore, setMinScore, hasPhone, setHasPhone, hasWebsite, setHasWebsite,
+  hasOwnerName, setHasOwnerName, blueCollar, setBlueCollar,
+  insuranceClass, setInsuranceClass, sortBy, setSortBy, onApply,
+}: FilterChipBarProps) {
+  const [openPopover, setOpenPopover] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!openPopover) return;
+    function onOutsideClick(e: MouseEvent) {
+      const target = e.target as HTMLElement;
+      if (!target.closest(".filter-popover-wrap")) setOpenPopover(null);
+    }
+    document.addEventListener("mousedown", onOutsideClick);
+    return () => document.removeEventListener("mousedown", onOutsideClick);
+  }, [openPopover]);
+
+  function toggle(key: string) {
+    setOpenPopover((prev) => (prev === key ? null : key));
+  }
+
+  function applyAndClose() {
+    setOpenPopover(null);
+    onApply();
+  }
+
+  return (
+    <div className="filter-chip-bar">
+      {/* Score */}
+      <div className="filter-popover-wrap">
+        <button
+          className={`filter-chip${minScore > 0 ? " active" : ""}`}
+          onClick={() => toggle("score")}
         >
-          <div
-            style={{
-              width: "min(560px, 100%)",
-              background: "white",
-              borderRadius: "14px",
-              padding: "1rem 1rem 0.9rem",
-              border: "1px solid var(--gray-200)",
-            }}
-          >
-            <h3 style={{ margin: 0, fontSize: "1rem", color: "var(--gray-900)" }}>Welcome to RepRoute</h3>
-            <p style={{ margin: "0.4rem 0 0.65rem", fontSize: "0.8rem", color: "var(--gray-600)" }}>
-              Three-step flow: Plan route, review ranked leads, save and track follow-ups.
-            </p>
-            <ol style={{ margin: 0, paddingLeft: "1.1rem", color: "var(--gray-700)", fontSize: "0.78rem", lineHeight: 1.5 }}>
-              <li><strong>Plan</strong>: create a route in the Route tab.</li>
-              <li><strong>Review</strong>: check score explanation and contact availability.</li>
-              <li><strong>Track</strong>: save leads, add notes, schedule follow-up dates in Saved/Today.</li>
-            </ol>
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.45rem", marginTop: "0.8rem" }}>
-              <button
-                className="btn btn-ghost btn-sm"
-                onClick={() => {
-                  window.localStorage.setItem("reproute_onboarding_seen_v1", "1");
-                  setShowOnboarding(false);
-                }}
-              >
-                Dismiss
-              </button>
-              <button
-                className="btn btn-primary btn-sm"
-                onClick={() => {
-                  window.localStorage.setItem("reproute_onboarding_seen_v1", "1");
-                  setShowOnboarding(false);
-                  setTab("route");
-                }}
-              >
-                Start Planning
-              </button>
+          Score {minScore}+ <span className="filter-chip-caret">▾</span>
+        </button>
+        {openPopover === "score" && (
+          <div className="filter-popover">
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span className="filter-popover-label">Min score</span>
+              <span className="filter-popover-value">{minScore}</span>
+            </div>
+            <input
+              type="range" min={0} max={100} value={minScore}
+              onChange={(e) => setMinScore(Number(e.target.value))}
+            />
+            <button className="btn btn-primary btn-sm" onClick={applyAndClose}>Apply</button>
+          </div>
+        )}
+      </div>
+
+      {/* Phone */}
+      <button
+        className={`filter-chip${hasPhone ? " active" : ""}`}
+        onClick={() => { setHasPhone(hasPhone ? undefined : true); onApply(); }}
+      >
+        Phone
+      </button>
+
+      {/* Website */}
+      <button
+        className={`filter-chip${hasWebsite ? " active" : ""}`}
+        onClick={() => { setHasWebsite(hasWebsite ? undefined : true); onApply(); }}
+      >
+        Website
+      </button>
+
+      {/* Owner */}
+      <button
+        className={`filter-chip${hasOwnerName ? " active" : ""}`}
+        onClick={() => { setHasOwnerName(hasOwnerName ? undefined : true); onApply(); }}
+      >
+        Owner known
+      </button>
+
+      {/* Blue collar */}
+      <button
+        className={`filter-chip${blueCollar ? " active" : ""}`}
+        onClick={() => { setBlueCollar(blueCollar ? undefined : true); onApply(); }}
+      >
+        🔧 Blue collar
+      </button>
+
+      {/* Type */}
+      <div className="filter-popover-wrap">
+        <button
+          className={`filter-chip${insuranceClass ? " active" : ""}`}
+          onClick={() => toggle("type")}
+        >
+          {INSURANCE_LABELS[insuranceClass] ?? "Type"} <span className="filter-chip-caret">▾</span>
+        </button>
+        {openPopover === "type" && (
+          <div className="filter-popover">
+            <span className="filter-popover-label">Business type</span>
+            <div className="popover-radio-list">
+              {INSURANCE_CLASSES.map((ic) => (
+                <button
+                  key={ic}
+                  className={`popover-radio-btn${insuranceClass === ic ? " selected" : ""}`}
+                  onClick={() => { setInsuranceClass(ic); applyAndClose(); }}
+                >
+                  <span className="popover-radio-dot" />
+                  {INSURANCE_LABELS[ic]}
+                </button>
+              ))}
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
+
+      {/* Sort */}
+      <div className="filter-popover-wrap">
+        <button
+          className="filter-chip"
+          onClick={() => toggle("sort")}
+        >
+          {sortBy === "score" ? "Top score" : "By type"} <span className="filter-chip-caret">▾</span>
+        </button>
+        {openPopover === "sort" && (
+          <div className="filter-popover">
+            <span className="filter-popover-label">Sort by</span>
+            <div className="popover-radio-list">
+              {SORT_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  className={`popover-radio-btn${sortBy === opt.value ? " selected" : ""}`}
+                  onClick={() => { setSortBy(opt.value); applyAndClose(); }}
+                >
+                  <span className="popover-radio-dot" />
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

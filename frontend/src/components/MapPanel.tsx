@@ -10,6 +10,8 @@ type Props = {
   leads: Lead[];
   selectedLead: { business_id: string; lat?: number | null; lng?: number | null } | null;
   onSelectLead: (lead: Lead) => void;
+  userPosition?: { lat: number; lng: number } | null;
+  resizeTrigger?: number;
 };
 
 const protocol = new Protocol();
@@ -30,7 +32,7 @@ const RASTER_STYLE: maplibregl.StyleSpecification = {
   layers: [{ id: "osm-tiles", type: "raster", source: "osm" }],
 };
 
-export function MapPanel({ routeGeoJson, leads, selectedLead, onSelectLead }: Props) {
+export function MapPanel({ routeGeoJson, leads, selectedLead, onSelectLead, userPosition, resizeTrigger }: Props) {
   const mapRef = useRef<maplibregl.Map | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const leadsRef = useRef<Lead[]>([]);
@@ -103,41 +105,105 @@ export function MapPanel({ routeGeoJson, leads, selectedLead, onSelectLead }: Pr
         layout: { "line-cap": "round", "line-join": "round" },
       });
 
-      // Lead points — outer ring
+      // Lead points with clustering
       map.addSource("leads", {
         type: "geojson",
         data: { type: "FeatureCollection", features: [] },
+        cluster: true,
+        clusterMaxZoom: 11,
+        clusterRadius: 40,
       });
+
+      // Cluster circles
       map.addLayer({
-        id: "lead-halo",
+        id: "lead-clusters",
         type: "circle",
         source: "leads",
+        filter: ["has", "point_count"],
         paint: {
-          "circle-color": "#fef2f2",
-          "circle-radius": 9,
-          "circle-stroke-width": 1.5,
-          "circle-stroke-color": "#f87171",
-          "circle-opacity": ["case", ["==", ["get", "selected"], true], 1, 0],
-          "circle-stroke-opacity": ["case", ["==", ["get", "selected"], true], 1, 0],
+          "circle-color": "#F97316",
+          "circle-radius": ["step", ["get", "point_count"], 16, 10, 20, 30, 24],
+          "circle-opacity": 0.85,
+          "circle-stroke-width": 2,
+          "circle-stroke-color": "#ffffff",
         },
       });
+
+      // Cluster count labels — only on vector/PMTiles style that has glyphs
+      const hasGlyphs = !!(map.getStyle() as any).glyphs;
+      if (hasGlyphs) {
+        map.addLayer({
+          id: "lead-cluster-count",
+          type: "symbol",
+          source: "leads",
+          filter: ["has", "point_count"],
+          layout: {
+            "text-field": ["get", "point_count_abbreviated"],
+            "text-size": 12,
+            "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"],
+          },
+          paint: { "text-color": "#ffffff" },
+        });
+      }
+
+      // Score-tiered individual points
       map.addLayer({
         id: "lead-points",
         type: "circle",
         source: "leads",
+        filter: ["!", ["has", "point_count"]],
         paint: {
           "circle-color": [
             "case",
-            ["==", ["get", "selected"], true], "#2563eb",
-            "#ef4444",
+            ["==", ["get", "selected"], true], "#F97316",
+            [">=", ["get", "score"], 70], "#22D3A0",
+            [">=", ["get", "score"], 45], "#FBBF24",
+            "#F87171",
           ],
           "circle-radius": [
             "case",
-            ["==", ["get", "selected"], true], 7,
-            5,
+            ["==", ["get", "selected"], true], 10,
+            [">=", ["get", "score"], 70], 8,
+            [">=", ["get", "score"], 45], 7,
+            6,
           ],
-          "circle-stroke-width": 2,
+          "circle-stroke-width": [
+            "case",
+            ["==", ["get", "selected"], true], 3,
+            2,
+          ],
           "circle-stroke-color": "#ffffff",
+          "circle-opacity": 0.95,
+        },
+      });
+
+      // Blue-collar accent dot
+      map.addLayer({
+        id: "lead-bc-dot",
+        type: "circle",
+        source: "leads",
+        filter: ["all", ["!", ["has", "point_count"]], ["==", ["get", "is_blue_collar"], true]],
+        paint: {
+          "circle-color": "#F97316",
+          "circle-radius": 3,
+          "circle-translate": [6, -6],
+          "circle-stroke-width": 1,
+          "circle-stroke-color": "#ffffff",
+        },
+      });
+
+      // Selected pulse ring
+      map.addLayer({
+        id: "lead-pulse",
+        type: "circle",
+        source: "leads",
+        filter: ["all", ["!", ["has", "point_count"]], ["==", ["get", "selected"], true]],
+        paint: {
+          "circle-color": "transparent",
+          "circle-radius": 18,
+          "circle-stroke-width": 2,
+          "circle-stroke-color": "#F97316",
+          "circle-stroke-opacity": 0.4,
         },
       });
 
@@ -149,8 +215,20 @@ export function MapPanel({ routeGeoJson, leads, selectedLead, onSelectLead }: Pr
         if (found) onSelectLeadRef.current(found);
       });
 
+      map.on("click", "lead-clusters", (e) => {
+        const feature = e.features?.[0];
+        if (!feature) return;
+        const src = map.getSource("leads") as maplibregl.GeoJSONSource;
+        src.getClusterExpansionZoom(feature.properties!.cluster_id as number).then((zoom) => {
+          const geom = feature.geometry as GeoJSON.Point;
+          map.easeTo({ center: geom.coordinates as [number, number], zoom: zoom + 0.5 });
+        }).catch(() => {});
+      });
+
       map.on("mouseenter", "lead-points", () => { map.getCanvas().style.cursor = "pointer"; });
       map.on("mouseleave", "lead-points", () => { map.getCanvas().style.cursor = ""; });
+      map.on("mouseenter", "lead-clusters", () => { map.getCanvas().style.cursor = "pointer"; });
+      map.on("mouseleave", "lead-clusters", () => { map.getCanvas().style.cursor = ""; });
     });
 
     return () => {
@@ -195,6 +273,8 @@ export function MapPanel({ routeGeoJson, leads, selectedLead, onSelectLead }: Pr
             properties: {
               business_id: l.business_id,
               name: l.name,
+              score: l.final_score ?? 0,
+              is_blue_collar: l.is_blue_collar ?? false,
               selected: selectedLead?.business_id === l.business_id,
             },
           })),
@@ -208,6 +288,32 @@ export function MapPanel({ routeGeoJson, leads, selectedLead, onSelectLead }: Pr
     if (!map || !selectedLead || typeof selectedLead.lng !== "number") return;
     map.easeTo({ center: [selectedLead.lng as number, selectedLead.lat as number], zoom: Math.max(map.getZoom(), 14), duration: 400 });
   }, [selectedLead]);
+
+  // Resize when container dimensions change (detail rail open/close)
+  useEffect(() => {
+    mapRef.current?.resize();
+  }, [resizeTrigger]);
+
+  // "You are here" dot
+  const posMarkerRef = useRef<maplibregl.Marker | null>(null);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (!userPosition) {
+      posMarkerRef.current?.remove();
+      posMarkerRef.current = null;
+      return;
+    }
+    const el = document.createElement("div");
+    el.style.cssText = "width:16px;height:16px;border-radius:50%;background:#3B82F6;border:3px solid white;box-shadow:0 0 0 2px rgba(59,130,246,0.4)";
+    if (!posMarkerRef.current) {
+      posMarkerRef.current = new maplibregl.Marker({ element: el })
+        .setLngLat([userPosition.lng, userPosition.lat])
+        .addTo(map);
+    } else {
+      posMarkerRef.current.setLngLat([userPosition.lng, userPosition.lat]);
+    }
+  }, [userPosition]);
 
   return (
     <div className="map-container" ref={containerRef} />

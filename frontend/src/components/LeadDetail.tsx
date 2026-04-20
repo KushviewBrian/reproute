@@ -90,6 +90,7 @@ type Props = {
   token?: string;
   refreshToken?: () => Promise<string | undefined>;
   onClose: () => void;
+  userPosition?: { lat: number; lng: number } | null;
 };
 
 const STATUS_OPTIONS = [
@@ -156,7 +157,7 @@ function IconBookmark() {
   );
 }
 
-export function LeadDetail({ lead, routeId, token, refreshToken, onClose }: Props) {
+export function LeadDetail({ lead, routeId, token, refreshToken, onClose, userPosition: _userPosition }: Props) {
   const [notes, setNotes] = useState<
     { id: string; note_text: string; created_at: string; outcome_status?: string | null; next_action?: string | null }[]
   >([]);
@@ -170,6 +171,9 @@ export function LeadDetail({ lead, routeId, token, refreshToken, onClose }: Prop
   const [validationLoading, setValidationLoading] = useState(false);
   const [validationTriggering, setValidationTriggering] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [callLogged, setCallLogged] = useState(false);
+  const [ownerEditing, setOwnerEditing] = useState(false);
+  const [ownerDraft, setOwnerDraft] = useState("");
 
   useEffect(() => {
     if (!lead) return;
@@ -358,203 +362,293 @@ export function LeadDetail({ lead, routeId, token, refreshToken, onClose }: Prop
   const websiteHref = lead.website
     ? lead.website.startsWith("http") ? lead.website : `https://${lead.website}`
     : null;
+  const geoHref = lead.lat != null && lead.lng != null
+    ? `geo:${lead.lat},${lead.lng}?q=${encodeURIComponent(lead.address ?? `${lead.lat},${lead.lng}`)}`
+    : null;
+
+  const score = lead.final_score ?? 0;
+  const scoreTier = score >= 70 ? "high" : score >= 45 ? "mid" : "low";
+
+  async function saveOwnerName() {
+    if (!lead || !token) return;
+    try {
+      const saved = await saveLead({ business_id: lead.business_id, route_id: routeId ?? undefined }, token);
+      await updateSavedLead(saved.id, { owner_name: ownerDraft || undefined } as any, token);
+    } catch { /* non-critical */ }
+    setOwnerEditing(false);
+  }
 
   return (
     <div className="detail-pane">
-      {/* Header */}
+      <div className="detail-drag-handle" />
+
+      {/* Header: score + name + close */}
       <div className="detail-header">
-        <div className="detail-title-group">
-          <h3 className="detail-title">{lead.name}</h3>
-          <p className="detail-subtitle">
-            {lead.insurance_class ?? "Unknown class"}
-            {lead.is_blue_collar && (
-              <span style={{ marginLeft: "0.4rem", fontSize: "0.7rem", background: "#eff6ff", color: "#1d4ed8", border: "1px solid #bfdbfe", borderRadius: "6px", padding: "0.1rem 0.4rem" }}>🔧 Blue collar</span>
-            )}
-          </p>
+        <div className="detail-header-main">
+          <span className={`detail-score-badge score-badge ${scoreTier}`}>{lead.final_score ?? "—"}</span>
+          <div className="detail-title-group">
+            <h3 className="detail-title">{lead.name}</h3>
+            <p className="detail-subtitle">
+              {lead.insurance_class ?? "Unknown class"}
+              {lead.is_blue_collar && (
+                <span className="blue-collar-tag" style={{ marginLeft: "0.4rem" }}>🔧 Blue collar</span>
+              )}
+            </p>
+          </div>
         </div>
-        <button className="btn btn-icon btn-sm" onClick={onClose} title="Close">
+        <button className="btn btn-icon btn-sm" onClick={onClose} title="Close" aria-label="Close detail panel">
           <IconX />
+        </button>
+      </div>
+
+      {/* Status segmented control */}
+      <div className="status-segmented">
+        {STATUS_OPTIONS.map((s) => (
+          <button
+            key={s.value}
+            type="button"
+            className={`status-seg-btn${status === s.value ? ` active active-${s.value}` : ""}`}
+            onClick={() => setStatus(s.value)}
+            aria-pressed={status === s.value}
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
+      <div style={{ padding: "0 1rem 0.75rem" }}>
+        <button
+          className="btn btn-primary btn-sm"
+          style={{ width: "100%" }}
+          onClick={saveWithStatus}
+          disabled={saving}
+        >
+          {saving ? <><span className="spinner" /> Saving…</> : <><IconBookmark /> Save &amp; set status</>}
         </button>
       </div>
 
       {/* Scrollable body */}
       <div className="detail-body">
-        {/* Contact info */}
-        <div className="detail-section">
-          <p className="detail-section-title">Contact</p>
-          <p style={{ fontSize: "0.72rem", color: "var(--gray-500)", marginBottom: "0.25rem" }}>
-            Contact availability: {lead.phone ? "Phone found" : "Phone missing"} · {lead.website ? "Website found" : "Website missing"}
-          </p>
+
+        {/* Contact section */}
+        <div className="detail-section detail-full-col">
+          <p className="detail-section-title">Contact info</p>
+
           {lead.address && (
             <div className="detail-info-row">
               <IconMapPin />
-              <span>{lead.address}</span>
+              {geoHref ? (
+                <a href={geoHref} className="detail-info-link">{lead.address}</a>
+              ) : (
+                <span>{lead.address}</span>
+              )}
             </div>
           )}
-          {lead.phone && (
-            <div className="detail-info-row">
+
+          {lead.phone ? (
+            <div className="detail-info-row detail-info-row--action">
               <IconPhone />
-              {phoneHref ? (
-                <a href={phoneHref}>{lead.phone}</a>
+              <a href={phoneHref!} className="detail-info-link" style={{ flex: 1 }}>{lead.phone}</a>
+              {!callLogged ? (
+                <a
+                  href={phoneHref!}
+                  className="btn btn-ghost btn-sm detail-action-btn"
+                  onClick={() => setCallLogged(true)}
+                >
+                  Call
+                </a>
               ) : (
-                <span>{lead.phone}</span>
+                <span className="detail-call-logged">Logged ✓</span>
               )}
             </div>
+          ) : (
+            <div className="detail-info-row detail-info-missing">
+              <IconPhone />
+              <span>No phone number</span>
+            </div>
           )}
-          {lead.website && (
-            <div className="detail-info-row">
+
+          {lead.website ? (
+            <div className="detail-info-row detail-info-row--action">
               <IconGlobe />
-              {websiteHref ? (
-                <a href={websiteHref} target="_blank" rel="noreferrer">{lead.website}</a>
-              ) : (
-                <span>{lead.website}</span>
-              )}
+              <a href={websiteHref!} target="_blank" rel="noreferrer" className="detail-info-link" style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {lead.website.replace(/^https?:\/\//, "").replace(/\/$/, "")}
+              </a>
+              <a
+                href={websiteHref!}
+                target="_blank"
+                rel="noreferrer"
+                className="btn btn-ghost btn-sm detail-action-btn"
+              >
+                Visit
+              </a>
+            </div>
+          ) : (
+            <div className="detail-info-row detail-info-missing">
+              <IconGlobe />
+              <span>No website</span>
             </div>
           )}
-          <div className="detail-info-row">
-            <span style={{ fontSize: "0.72rem", color: lead.owner_name ? "var(--gray-600)" : "var(--gray-400)" }}>
-              Owner:{" "}
-              {lead.owner_name ? (
-                <><strong>{lead.owner_name}</strong>
-                {lead.owner_name_source && lead.owner_name_source !== "manual" && (
-                  <span style={{ marginLeft: "0.3rem", fontSize: "0.65rem", color: "var(--gray-400)" }}>via {lead.owner_name_source.replace(/_/g, " ")}</span>
+
+          {/* Owner row */}
+          <div className="detail-info-row detail-owner-row">
+            <span className="detail-owner-label">Owner</span>
+            {ownerEditing ? (
+              <div className="detail-owner-edit">
+                <input
+                  type="text"
+                  className="form-input form-input--sm"
+                  value={ownerDraft}
+                  placeholder="Owner name"
+                  autoFocus
+                  onChange={(e) => setOwnerDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") saveOwnerName();
+                    if (e.key === "Escape") setOwnerEditing(false);
+                  }}
+                />
+                <button className="btn btn-primary btn-sm" onClick={saveOwnerName}>Save</button>
+                <button className="btn btn-ghost btn-sm" onClick={() => setOwnerEditing(false)}>Cancel</button>
+              </div>
+            ) : (
+              <div className="detail-owner-value">
+                {lead.owner_name ? (
+                  <>
+                    <strong style={{ color: "var(--text-primary)" }}>{lead.owner_name}</strong>
+                    {lead.owner_name_source && lead.owner_name_source !== "manual" && (
+                      <span className="detail-owner-source">via {lead.owner_name_source.replace(/_/g, " ")}</span>
+                    )}
+                    {lead.owner_name_confidence != null && (
+                      <span className="detail-owner-conf">{Math.round(lead.owner_name_confidence * 100)}%</span>
+                    )}
+                  </>
+                ) : (
+                  <span style={{ color: "var(--text-muted)" }}>Unknown</span>
                 )}
-                {lead.owner_name_confidence != null && (
-                  <span style={{ marginLeft: "0.25rem", fontSize: "0.65rem", color: "var(--gray-400)" }}>{Math.round(lead.owner_name_confidence * 100)}%</span>
-                )}</>
-              ) : "Unknown"}
-            </span>
+                {token && (
+                  <button
+                    className="btn-link detail-owner-edit-btn"
+                    onClick={() => { setOwnerDraft(lead.owner_name ?? ""); setOwnerEditing(true); }}
+                  >
+                    Edit
+                  </button>
+                )}
+              </div>
+            )}
           </div>
-          {!lead.address && !lead.phone && !lead.website && (
-            <p style={{ fontSize: "0.75rem", color: "var(--gray-400)" }}>No contact info available</p>
-          )}
         </div>
 
         {/* Score breakdown */}
-        <div className="detail-section">
-          <p className="detail-section-title">Score breakdown</p>
-          <p style={{ fontSize: "0.72rem", color: "var(--gray-500)", marginBottom: "0.25rem" }}>
-            Confidence: {validation?.overall_label ?? (validationLoading ? "Loading…" : "Unchecked")}
-            {validation?.overall_confidence != null ? ` (${Math.round(validation.overall_confidence)}%)` : ""}
-          </p>
-          {lead.fit_score != null && lead.distance_score != null && lead.actionability_score != null ? (
-            <>
-              <div className="score-breakdown">
-                <div className="score-mini">
-                  <div className="score-mini-label">Fit</div>
-                  <div className="score-mini-value">{lead.fit_score}</div>
+        {(lead.fit_score != null || lead.final_score != null) && (
+          <div className="detail-section detail-full-col">
+            <details className="score-breakdown-details">
+              <summary className="detail-section-title score-breakdown-summary">
+                Score breakdown
+                <span className="score-breakdown-total">{lead.final_score ?? "—"}</span>
+              </summary>
+              {lead.fit_score != null && lead.distance_score != null && lead.actionability_score != null ? (
+                <div className="score-bar-list">
+                  {[
+                    { label: "Fit", value: lead.fit_score, note: lead.explanation?.fit },
+                    { label: "Distance", value: lead.distance_score, note: lead.explanation?.distance },
+                    { label: "Actionability", value: lead.actionability_score, note: lead.explanation?.actionability },
+                  ].map(({ label, value, note }) => (
+                    <div key={label} className="score-bar-row">
+                      <div className="score-bar-meta">
+                        <span className="score-bar-label">{label}</span>
+                        <span className="score-bar-value">{value}</span>
+                      </div>
+                      <div className="score-bar-track">
+                        <div className="score-bar-fill" style={{ width: `${Math.min(value, 100)}%` }} />
+                      </div>
+                      {note && <p className="score-bar-note">{note}</p>}
+                    </div>
+                  ))}
                 </div>
-                <div className="score-mini">
-                  <div className="score-mini-label">Distance</div>
-                  <div className="score-mini-value">{lead.distance_score}</div>
-                </div>
-                <div className="score-mini">
-                  <div className="score-mini-label">Action</div>
-                  <div className="score-mini-value">{lead.actionability_score}</div>
-                </div>
-              </div>
-              {lead.explanation && (
-                <p style={{ fontSize: "0.7rem", color: "var(--gray-500)", lineHeight: 1.5, marginTop: "0.25rem" }}>
-                  Why it ranked: {lead.explanation.fit} · {lead.explanation.distance} · {lead.explanation.actionability}
+              ) : (
+                <p style={{ fontSize: "0.72rem", color: "var(--text-muted)", padding: "0.5rem 0" }}>
+                  Overall score: {lead.final_score ?? "—"}
                 </p>
               )}
-            </>
-          ) : (
-            <p style={{ fontSize: "0.72rem", color: "var(--gray-400)" }}>
-              {lead.final_score != null ? `Overall score: ${lead.final_score}` : "Score not available for this context"}
-            </p>
-          )}
-        </div>
-
-        {/* Save with status */}
-        <div className="detail-section">
-          <p className="detail-section-title">Status</p>
-          <div className="status-select-row">
-            <select
-              className="form-select"
-              value={status}
-              onChange={(e) => setStatus(e.target.value)}
-            >
-              {STATUS_OPTIONS.map((s) => (
-                <option key={s.value} value={s.value}>{s.label}</option>
-              ))}
-            </select>
-            <button
-              className="btn btn-primary btn-sm"
-              style={{ whiteSpace: "nowrap" }}
-              onClick={saveWithStatus}
-              disabled={saving}
-            >
-              {saving ? <span className="spinner" /> : <IconBookmark />}
-              Save
-            </button>
+            </details>
           </div>
-        </div>
+        )}
 
-        {/* Validation evidence drawer */}
+        {/* Data validation */}
         <div className="detail-section detail-full-col">
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <p className="detail-section-title">Data validation</p>
-            {token && (
-              <button
-                className="btn btn-ghost btn-sm"
-                onClick={handleValidate}
-                disabled={validationTriggering || !lead}
-                style={{ fontSize: "0.7rem", padding: "0.2rem 0.5rem" }}
-              >
-                {validationTriggering ? <><span className="spinner" /> Checking…</> : "Validate now"}
-              </button>
+          <details className="validation-details" open={!!validation}>
+            <summary style={{ display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer" }}>
+              <span className="detail-section-title" style={{ pointerEvents: "none" }}>
+                Data validation
+                {validation?.overall_label && (
+                  <span className="val-summary-chip" style={{ marginLeft: "0.5rem" }}>{validation.overall_label}</span>
+                )}
+              </span>
+              {token && (
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={(e) => { e.preventDefault(); handleValidate(); }}
+                  disabled={validationTriggering || !lead}
+                  style={{ fontSize: "0.7rem", padding: "0.2rem 0.5rem", pointerEvents: "all" }}
+                >
+                  {validationTriggering ? <><span className="spinner" /> Checking…</> : "Validate now"}
+                </button>
+              )}
+            </summary>
+
+            {validationError && (
+              <p style={{ fontSize: "0.7rem", color: "var(--accent-danger)", marginTop: "0.375rem" }}>{validationError}</p>
             )}
-          </div>
-          {validationError && (
-            <p style={{ fontSize: "0.7rem", color: "#b42318" }}>{validationError}</p>
-          )}
-          {validation && validation.fields.length > 0 ? (
-            <div className="val-field-list">
-              {validation.fields.map((f) => (
-                <div key={f.field_name} className="val-field-row">
-                  <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", flexWrap: "wrap" }}>
-                    <span className="val-field-name">{f.field_name}</span>
-                    <span className={`val-state-chip val-state-chip--${f.state ?? "unknown"}`}>
-                      {f.state ?? "unknown"}
-                    </span>
-                    {f.confidence != null && (
-                      <span style={{ fontSize: "0.68rem", color: "var(--gray-500)" }}>{Math.round(f.confidence)}%</span>
+
+            {validation && validation.fields.length > 0 ? (
+              <div className="val-field-list" style={{ marginTop: "0.5rem" }}>
+                {validation.fields.map((f) => (
+                  <div key={f.field_name} className="val-field-row">
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", flexWrap: "wrap" }}>
+                      <span className="val-field-name">{f.field_name}</span>
+                      <span className={`val-state-chip val-state-chip--${f.state ?? "unknown"}`}>
+                        {f.state ?? "unknown"}
+                      </span>
+                      {f.confidence != null && (
+                        <span style={{ fontSize: "0.68rem", color: "var(--text-muted)" }}>{Math.round(f.confidence)}%</span>
+                      )}
+                    </div>
+                    {f.value_normalized && f.value_normalized !== f.value_current && (
+                      <p style={{ fontSize: "0.67rem", color: "var(--text-muted)", marginTop: "0.15rem" }}>
+                        Normalized: {f.value_normalized}
+                      </p>
                     )}
-                    {f.failure_class && (
-                      <span style={{ fontSize: "0.65rem", color: "var(--gray-400)" }}>({f.failure_class})</span>
+                    {token && (
+                      <details className="val-field-advanced">
+                        <summary style={{ fontSize: "0.65rem", color: "var(--text-muted)", cursor: "pointer" }}>Advanced</summary>
+                        {f.last_checked_at && (
+                          <p style={{ fontSize: "0.65rem", color: "var(--text-muted)" }}>
+                            Checked {new Date(f.last_checked_at).toLocaleDateString()}
+                            {f.next_check_at ? ` · Next ${new Date(f.next_check_at).toLocaleDateString()}` : ""}
+                          </p>
+                        )}
+                        {f.failure_class && (
+                          <p style={{ fontSize: "0.65rem", color: "var(--text-muted)" }}>Failure: {f.failure_class}</p>
+                        )}
+                        <button
+                          className="btn-link"
+                          style={{ fontSize: "0.65rem", marginTop: "0.15rem" }}
+                          onClick={() => handlePin(f.field_name, !f.pinned_by_user)}
+                        >
+                          {f.pinned_by_user ? "Unpin (auto-recheck enabled)" : "Pin (skip auto-recheck)"}
+                        </button>
+                      </details>
                     )}
                   </div>
-                  {f.value_normalized && f.value_normalized !== f.value_current && (
-                    <p style={{ fontSize: "0.67rem", color: "var(--gray-500)", marginTop: "0.15rem" }}>
-                      Normalized: {f.value_normalized}
-                    </p>
-                  )}
-                  {f.last_checked_at && (
-                    <p style={{ fontSize: "0.65rem", color: "var(--gray-400)", marginTop: "0.1rem" }}>
-                      Checked {new Date(f.last_checked_at).toLocaleDateString()}
-                      {f.next_check_at ? ` · Next ${new Date(f.next_check_at).toLocaleDateString()}` : ""}
-                    </p>
-                  )}
-                  {token && (
-                    <button
-                      className="btn-link"
-                      style={{ fontSize: "0.65rem", marginTop: "0.15rem" }}
-                      onClick={() => handlePin(f.field_name, !f.pinned_by_user)}
-                    >
-                      {f.pinned_by_user ? "Unpin (auto-recheck enabled)" : "Pin (skip auto-recheck)"}
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-          ) : (
-            !validationLoading && (
-              <p style={{ fontSize: "0.75rem", color: "var(--gray-400)" }}>
-                {token ? "No validation data yet. Save this lead first, then click \"Validate now\"." : "Sign in to validate this lead."}
-              </p>
-            )
-          )}
+                ))}
+              </div>
+            ) : (
+              !validationLoading && (
+                <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "0.375rem" }}>
+                  {token ? "No validation data yet. Save this lead first, then tap \"Validate now\"." : "Sign in to validate this lead."}
+                </p>
+              )
+            )}
+          </details>
         </div>
 
         {/* Notes */}
@@ -564,60 +658,60 @@ export function LeadDetail({ lead, routeId, token, refreshToken, onClose }: Prop
           {queueCount > 0 && (
             <div className="offline-banner">
               <IconWifi />
-              {queueCount} unsynced change{queueCount > 1 ? "s" : ""} queued — will sync when online
+              {queueCount} unsynced change{queueCount > 1 ? "s" : ""} — will sync when online
             </div>
           )}
 
-          <div className="notes-input-row">
+          <div className="notes-compose">
             <textarea
               className="notes-textarea"
               value={noteText}
-              placeholder="Add a note…"
+              placeholder="Add a note… (⌘↵ to save)"
               rows={2}
               onChange={(e) => setNoteText(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) addNote(); }}
             />
-            <select
-              className="form-select"
-              style={{ minWidth: "9rem", alignSelf: "flex-end" }}
-              value={noteOutcome}
-              onChange={(e) => setNoteOutcome(e.target.value)}
-            >
-              {STATUS_OPTIONS.map((s) => (
-                <option key={s.value} value={s.value}>{s.label}</option>
-              ))}
-            </select>
-            <input
-              type="text"
-              className="form-input"
-              style={{ minWidth: "10rem", alignSelf: "flex-end" }}
-              value={nextAction}
-              placeholder="Next action (optional)"
-              onChange={(e) => setNextAction(e.target.value)}
-            />
-            <button
-              className="btn btn-primary btn-sm"
-              style={{ alignSelf: "flex-end" }}
-              disabled={!noteText.trim()}
-              onClick={addNote}
-            >
-              <IconSend />
-            </button>
+            <div className="notes-compose-footer">
+              <select
+                className="form-select form-select--sm"
+                value={noteOutcome}
+                onChange={(e) => setNoteOutcome(e.target.value)}
+              >
+                {STATUS_OPTIONS.map((s) => (
+                  <option key={s.value} value={s.value}>{s.label}</option>
+                ))}
+              </select>
+              <input
+                type="text"
+                className="form-input form-input--sm"
+                style={{ flex: 1, minWidth: 0 }}
+                value={nextAction}
+                placeholder="Next action…"
+                onChange={(e) => setNextAction(e.target.value)}
+              />
+              <button
+                className="btn btn-primary btn-sm"
+                disabled={!noteText.trim()}
+                onClick={addNote}
+                aria-label="Save note"
+              >
+                <IconSend />
+              </button>
+            </div>
           </div>
 
           <div className="notes-area">
             {notes.length === 0 && (
-              <p style={{ fontSize: "0.75rem", color: "var(--gray-400)" }}>No notes yet.</p>
+              <p style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>No notes yet.</p>
             )}
             {notes.map((n) => (
               <div key={n.id} className="note-item">
                 <p className="note-timestamp">{new Date(n.created_at).toLocaleString()}</p>
                 <p className="note-text">{n.note_text}</p>
                 {(n.outcome_status || n.next_action) && (
-                  <p className="note-timestamp" style={{ marginTop: "0.2rem" }}>
-                    {n.outcome_status ? `Outcome: ${n.outcome_status}` : ""}
-                    {n.outcome_status && n.next_action ? " · " : ""}
-                    {n.next_action ? `Next: ${n.next_action}` : ""}
+                  <p className="note-meta">
+                    {n.outcome_status && <span className="note-outcome-chip">{n.outcome_status.replace(/_/g, " ")}</span>}
+                    {n.next_action && <span style={{ color: "var(--text-muted)", fontSize: "0.67rem" }}>Next: {n.next_action}</span>}
                   </p>
                 )}
               </div>
