@@ -1,7 +1,7 @@
 import uuid
 
 from geoalchemy2 import Geography
-from sqlalchemy import Boolean, DateTime, Index, Numeric, String, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, Index, Integer, Numeric, String, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -54,3 +54,8 @@ class Business(Base):
     owner_name_source: Mapped[str | None] = mapped_column(String)
     owner_name_confidence: Mapped[float | None] = mapped_column(Numeric(4, 3))
     owner_name_last_checked_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True))
+    employee_count_estimate: Mapped[int | None] = mapped_column(Integer)
+    employee_count_band: Mapped[str | None] = mapped_column(String)
+    employee_count_source: Mapped[str | None] = mapped_column(String)
+    employee_count_confidence: Mapped[float | None] = mapped_column(Numeric(4, 3))
+    employee_count_last_checked_at: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True))

@@ -30,6 +30,10 @@ class LeadItem(BaseModel):
     owner_name: str | None = None
     owner_name_source: str | None = None
     owner_name_confidence: float | None = None
+    employee_count_estimate: int | None = None
+    employee_count_band: str | None = None
+    employee_count_source: str | None = None
+    employee_count_confidence: float | None = None
 
 
 class LeadGroup(BaseModel):

@@ -12,6 +12,7 @@ from app.db.session import _get_engine
 from app.models.business import Business
 from app.models.lead_score import LeadScore
 from app.models.route_candidate import RouteCandidate
+from app.services.contact_intelligence import promote_owner_name, resolved_confidence
 from app.services.osm_enrichment_service import OsmEnrichmentResult, fetch_osm_enrichment
 from app.utils.redis_client import redis_client
 
@@ -29,22 +30,14 @@ def _write_owner_name(
     source: str,
     confidence: float,
 ) -> None:
-    """Write owner_name if the new source has equal or higher confidence than existing."""
+    """Backward-compatible write helper used by existing API paths."""
     from datetime import UTC, datetime
 
-    SOURCE_CONFIDENCE = {
-        "manual": 1.0,
-        "website_jsonld": 0.85,
-        "osm_operator": 0.70,
-        "website_text": 0.50,
-        "unknown": 0.10,
-    }
     existing_src = business.owner_name_source or ""
     existing_conf = float(business.owner_name_confidence or 0.0)
-    # Never overwrite manual
     if existing_src == "manual":
         return
-    new_conf = SOURCE_CONFIDENCE.get(source, confidence)
+    new_conf = resolved_confidence(source, confidence)
     if business.owner_name and new_conf <= existing_conf:
         return
     business.owner_name = name
@@ -118,7 +111,13 @@ async def apply_enrichment(db: AsyncSession, business: Business, result: OsmEnri
     # Write owner_name from OSM operator tag when no higher-confidence source exists
     operator = getattr(result, "osm_operator", None)
     if operator:
-        _write_owner_name(business, operator, source="osm_operator", confidence=0.70)
+        await promote_owner_name(
+            db,
+            business,
+            owner_name=operator,
+            source="osm_operator",
+            evidence_json={"source": "osm", "element_id": result.element_id},
+        )
 
     await db.commit()
 

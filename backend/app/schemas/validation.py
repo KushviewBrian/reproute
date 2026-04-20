@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 
 class TriggerValidationRequest(BaseModel):
-    requested_checks: list[str] = Field(default_factory=lambda: ["website", "phone"])
+    requested_checks: list[str] = Field(default_factory=lambda: ["website", "phone", "owner_name"])
 
 
 class BatchValidationRequest(BaseModel):

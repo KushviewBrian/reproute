@@ -274,6 +274,14 @@ export function LeadList({
                   )}
                 </p>
               )}
+              {(lead.employee_count_estimate != null || lead.employee_count_band) && (
+                <p className="lead-explanation">
+                  Team size: <strong style={{ color: "var(--text-primary)" }}>
+                    {lead.employee_count_estimate != null ? lead.employee_count_estimate : "—"}
+                    {lead.employee_count_band ? ` (${lead.employee_count_band})` : ""}
+                  </strong>
+                </p>
+              )}
 
               {/* Note expansion area */}
               <div className={`lead-note-expand${noteExpanded ? " open" : ""}`}>

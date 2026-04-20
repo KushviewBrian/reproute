@@ -4,10 +4,13 @@ import asyncio
 import logging
 import re
 from dataclasses import dataclass
+from difflib import SequenceMatcher
+from math import acos, cos, radians, sin
 
 import httpx
 
 from app.core.config import get_settings
+from app.services.contact_intelligence import is_probable_person_name
 from app.utils.http_clients import get_overpass_client
 
 logger = logging.getLogger(__name__)
@@ -40,6 +43,41 @@ def _extract_tags(elements: list[dict]) -> dict:
         if tags:
             return tags
     return {}
+
+
+def _haversine_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    phi1, phi2 = radians(lat1), radians(lat2)
+    d_lng = radians(lng2 - lng1)
+    return 6_371_000.0 * acos(max(-1.0, min(1.0, sin(phi1) * sin(phi2) + cos(phi1) * cos(phi2) * cos(d_lng))))
+
+
+def _element_lat_lng(el: dict) -> tuple[float | None, float | None]:
+    if el.get("type") == "node":
+        return el.get("lat"), el.get("lon")
+    center = el.get("center") or {}
+    return center.get("lat"), center.get("lon")
+
+
+def _best_matching_tags(elements: list[dict], target_name: str, lat: float, lng: float) -> tuple[dict, dict] | tuple[None, None]:
+    best = None
+    target_norm = re.sub(r"[^a-z0-9]+", " ", target_name.lower()).strip()
+    for el in elements:
+        tags = el.get("tags") or {}
+        candidate_name = (tags.get("name") or "").strip()
+        if not candidate_name:
+            continue
+        candidate_norm = re.sub(r"[^a-z0-9]+", " ", candidate_name.lower()).strip()
+        similarity = SequenceMatcher(a=target_norm, b=candidate_norm).ratio()
+        el_lat, el_lng = _element_lat_lng(el)
+        distance_penalty = 0.0
+        if el_lat is not None and el_lng is not None:
+            distance_penalty = min(_haversine_m(lat, lng, float(el_lat), float(el_lng)) / 1000.0, 1.0)
+        score = similarity - (distance_penalty * 0.25)
+        if best is None or score > best[0]:
+            best = (score, tags, el)
+    if best is None:
+        return None, None
+    return best[1], best[2]
 
 
 def _clean_phone(raw: str | None) -> str | None:
@@ -163,15 +201,19 @@ async def fetch_osm_enrichment(lat: float, lng: float, name: str) -> OsmEnrichme
     if not elements:
         return None
 
-    tags = _extract_tags(elements)
+    tags, best_element = _best_matching_tags(elements, name, lat, lng)
+    if tags is None:
+        tags = _extract_tags(elements)
+        best_element = elements[0] if elements else {}
     if not tags:
         return None
 
     phone = next((_clean_phone(tags.get(t)) for t in _PHONE_TAGS if tags.get(t)), None)
     website = next((_clean_website(tags.get(t)) for t in _WEBSITE_TAGS if tags.get(t)), None)
     hours = tags.get("opening_hours")
-    osm_operator = next((tags.get(t, "").strip() or None for t in _OPERATOR_TAGS if tags.get(t, "").strip()), None)
-    element_id = f"{elements[0].get('type', '?')}_{elements[0].get('id', '?')}"
+    raw_operator = next((tags.get(t, "").strip() or None for t in _OPERATOR_TAGS if tags.get(t, "").strip()), None)
+    osm_operator = raw_operator if is_probable_person_name(raw_operator) else None
+    element_id = f"{best_element.get('type', '?')}_{best_element.get('id', '?')}"
 
     if not phone and not website and not hours and not osm_operator:
         return None

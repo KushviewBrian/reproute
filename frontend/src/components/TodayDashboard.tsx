@@ -55,6 +55,14 @@ function TodayCard({ item, onSelectLead }: { item: SavedLead; onSelectLead?: (le
           Ask for: <strong>{(item as any).owner_name}</strong>
         </p>
       )}
+      {((item as any).employee_count_estimate != null || (item as any).employee_count_band) && (
+        <p style={{ fontSize: "0.68rem", color: "var(--text-secondary)", marginTop: "0.1rem" }}>
+          Team size: <strong>
+            {(item as any).employee_count_estimate ?? "—"}
+            {(item as any).employee_count_band ? ` (${(item as any).employee_count_band})` : ""}
+          </strong>
+        </p>
+      )}
       {item.latest_note_text && (
         <p style={{ fontSize: "0.68rem", color: "var(--text-muted)", marginTop: "0.1rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {item.latest_note_text}

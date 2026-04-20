@@ -500,6 +500,14 @@ export function SavedLeads({ token, currentRouteId, onAddToRoute, onCountChange,
                     Ask for: <strong>{(it as any).owner_name}</strong>
                   </p>
                 )}
+                {((it as any).employee_count_estimate != null || (it as any).employee_count_band) && (
+                  <p style={{ fontSize: "0.68rem", color: "var(--text-secondary)" }}>
+                    Team size: <strong>
+                      {(it as any).employee_count_estimate ?? "—"}
+                      {(it as any).employee_count_band ? ` (${(it as any).employee_count_band})` : ""}
+                    </strong>
+                  </p>
+                )}
 
                 {it.address && (
                   <p style={{ fontSize: "0.68rem", color: "var(--text-muted)" }}>{it.address}</p>

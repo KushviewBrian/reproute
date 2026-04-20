@@ -13,6 +13,8 @@ from app.core.config import get_settings
 from app.services.validation_service import (
     _confidence_from_field_rows,
     _classify_request_failure,
+    _extract_employee_count_from_html,
+    _extract_owner_from_html,
     _normalize_phone,
     _overall_label,
     _validate_website,
@@ -41,6 +43,36 @@ def test_phone_normalization() -> None:
     assert _normalize_phone("(317) 555-1212") == "+13175551212"
     assert _normalize_phone("+1 317 555 1212") == "+13175551212"
     assert _normalize_phone("555") is None
+
+
+def test_extract_owner_from_html_rejects_entity_name() -> None:
+    html = "<html><body>Owner: Acme Roofing LLC</body></html>"
+    owner, source = _extract_owner_from_html(html)
+    assert owner is None
+    assert source is None
+
+
+def test_extract_owner_from_html_accepts_person_name() -> None:
+    html = '<script type="application/ld+json">{"@type":"Person","name":"Jane Doe"}</script>'
+    owner, source = _extract_owner_from_html(html)
+    assert owner == "Jane Doe"
+    assert source == "website_jsonld"
+
+
+def test_extract_employee_count_from_html_jsonld() -> None:
+    html = '<script type="application/ld+json">{"@type":"LocalBusiness","numberOfEmployees":"11-50"}</script>'
+    estimate, band, source = _extract_employee_count_from_html(html)
+    assert estimate is not None
+    assert band == "11-50"
+    assert source == "website_jsonld"
+
+
+def test_extract_employee_count_from_html_text_fallback() -> None:
+    html = "<html><body>We are a team of 27 experts.</body></html>"
+    estimate, band, source = _extract_employee_count_from_html(html)
+    assert estimate == 27
+    assert band == "11-50"
+    assert source == "website_text"
 
 
 def test_overall_confidence_and_labels() -> None:
@@ -221,17 +253,10 @@ async def test_validate_website_bot_blocked_maps_to_unknown(monkeypatch) -> None
         text = ""
 
     class _Client:
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, exc_type, exc, tb):
-            _ = exc_type, exc, tb
-            return False
-
         async def get(self, _url):
             return _Resp()
 
-    monkeypatch.setattr(validation_service.httpx, "AsyncClient", lambda **_kwargs: _Client())
+    monkeypatch.setattr(validation_service, "get_validation_client", lambda: _Client())
     result = await _validate_website("example.com")
     assert result.failure_class == "bot_blocked"
     assert result.state == "unknown"
@@ -246,17 +271,10 @@ async def test_validate_website_http_error_maps_to_invalid(monkeypatch) -> None:
         text = ""
 
     class _Client:
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, exc_type, exc, tb):
-            _ = exc_type, exc, tb
-            return False
-
         async def get(self, _url):
             return _Resp()
 
-    monkeypatch.setattr(validation_service.httpx, "AsyncClient", lambda **_kwargs: _Client())
+    monkeypatch.setattr(validation_service, "get_validation_client", lambda: _Client())
     result = await _validate_website("example.com")
     assert result.failure_class == "http_error"
     assert result.state == "invalid"

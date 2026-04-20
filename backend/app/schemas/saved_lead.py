@@ -15,6 +15,8 @@ class UpdateSavedLeadRequest(BaseModel):
     next_follow_up_at: datetime | None = None
     last_contact_attempt_at: datetime | None = None
     owner_name: str | None = None  # Phase 10: manual rep entry
+    employee_count_estimate: int | None = None
+    employee_count_band: str | None = None
 
 
 class SavedLeadItem(BaseModel):
@@ -39,6 +41,10 @@ class SavedLeadItem(BaseModel):
     owner_name: str | None = None
     owner_name_source: str | None = None
     owner_name_confidence: float | None = None
+    employee_count_estimate: int | None = None
+    employee_count_band: str | None = None
+    employee_count_source: str | None = None
+    employee_count_confidence: float | None = None
     insurance_class: str | None = None
     operating_status: str | None = None
     validation_state: str | None = None

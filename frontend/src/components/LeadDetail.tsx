@@ -40,6 +40,10 @@ export type DetailLead = {
   owner_name?: string | null;
   owner_name_source?: string | null;
   owner_name_confidence?: number | null;
+  employee_count_estimate?: number | null;
+  employee_count_band?: string | null;
+  employee_count_source?: string | null;
+  employee_count_confidence?: number | null;
 };
 
 export function leadToDetail(l: Lead): DetailLead {
@@ -61,6 +65,10 @@ export function leadToDetail(l: Lead): DetailLead {
     owner_name: l.owner_name,
     owner_name_source: l.owner_name_source,
     owner_name_confidence: l.owner_name_confidence,
+    employee_count_estimate: l.employee_count_estimate,
+    employee_count_band: l.employee_count_band,
+    employee_count_source: l.employee_count_source,
+    employee_count_confidence: l.employee_count_confidence,
   };
 }
 
@@ -81,6 +89,10 @@ export function savedLeadToDetail(s: SavedLead): DetailLead {
     owner_name: (s as any).owner_name ?? null,
     owner_name_source: (s as any).owner_name_source ?? null,
     owner_name_confidence: (s as any).owner_name_confidence ?? null,
+    employee_count_estimate: (s as any).employee_count_estimate ?? null,
+    employee_count_band: (s as any).employee_count_band ?? null,
+    employee_count_source: (s as any).employee_count_source ?? null,
+    employee_count_confidence: (s as any).employee_count_confidence ?? null,
   };
 }
 
@@ -174,6 +186,9 @@ export function LeadDetail({ lead, routeId, token, refreshToken, onClose, userPo
   const [callLogged, setCallLogged] = useState(false);
   const [ownerEditing, setOwnerEditing] = useState(false);
   const [ownerDraft, setOwnerDraft] = useState("");
+  const [employeeEditing, setEmployeeEditing] = useState(false);
+  const [employeeEstimateDraft, setEmployeeEstimateDraft] = useState("");
+  const [employeeBandDraft, setEmployeeBandDraft] = useState("");
 
   useEffect(() => {
     if (!lead) return;
@@ -378,6 +393,41 @@ export function LeadDetail({ lead, routeId, token, refreshToken, onClose, userPo
     setOwnerEditing(false);
   }
 
+  async function clearOwnerName() {
+    if (!lead || !token) return;
+    try {
+      const saved = await saveLead({ business_id: lead.business_id, route_id: routeId ?? undefined }, token);
+      await updateSavedLead(saved.id, { owner_name: null }, token);
+    } catch { /* non-critical */ }
+    setOwnerEditing(false);
+  }
+
+  async function saveEmployeeCount() {
+    if (!lead || !token) return;
+    const parsed = employeeEstimateDraft.trim() ? Number(employeeEstimateDraft.trim()) : null;
+    try {
+      const saved = await saveLead({ business_id: lead.business_id, route_id: routeId ?? undefined }, token);
+      await updateSavedLead(
+        saved.id,
+        {
+          employee_count_estimate: Number.isFinite(parsed) ? parsed : null,
+          employee_count_band: employeeBandDraft.trim() || null,
+        },
+        token,
+      );
+    } catch { /* non-critical */ }
+    setEmployeeEditing(false);
+  }
+
+  async function clearEmployeeCount() {
+    if (!lead || !token) return;
+    try {
+      const saved = await saveLead({ business_id: lead.business_id, route_id: routeId ?? undefined }, token);
+      await updateSavedLead(saved.id, { employee_count_estimate: null, employee_count_band: null }, token);
+    } catch { /* non-critical */ }
+    setEmployeeEditing(false);
+  }
+
   return (
     <div className="detail-pane">
       <div className="detail-drag-handle" />
@@ -507,6 +557,7 @@ export function LeadDetail({ lead, routeId, token, refreshToken, onClose, userPo
                   }}
                 />
                 <button className="btn btn-primary btn-sm" onClick={saveOwnerName}>Save</button>
+                <button className="btn btn-ghost btn-sm" onClick={clearOwnerName}>Clear</button>
                 <button className="btn btn-ghost btn-sm" onClick={() => setOwnerEditing(false)}>Cancel</button>
               </div>
             ) : (
@@ -528,6 +579,64 @@ export function LeadDetail({ lead, routeId, token, refreshToken, onClose, userPo
                   <button
                     className="btn-link detail-owner-edit-btn"
                     onClick={() => { setOwnerDraft(lead.owner_name ?? ""); setOwnerEditing(true); }}
+                  >
+                    Edit
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Employee count row */}
+          <div className="detail-info-row detail-owner-row">
+            <span className="detail-owner-label">Employees</span>
+            {employeeEditing ? (
+              <div className="detail-owner-edit">
+                <input
+                  type="number"
+                  className="form-input form-input--sm"
+                  value={employeeEstimateDraft}
+                  placeholder="Estimate"
+                  min={1}
+                  onChange={(e) => setEmployeeEstimateDraft(e.target.value)}
+                />
+                <input
+                  type="text"
+                  className="form-input form-input--sm"
+                  value={employeeBandDraft}
+                  placeholder="Band (e.g. 11-50)"
+                  onChange={(e) => setEmployeeBandDraft(e.target.value)}
+                />
+                <button className="btn btn-primary btn-sm" onClick={saveEmployeeCount}>Save</button>
+                <button className="btn btn-ghost btn-sm" onClick={clearEmployeeCount}>Clear</button>
+                <button className="btn btn-ghost btn-sm" onClick={() => setEmployeeEditing(false)}>Cancel</button>
+              </div>
+            ) : (
+              <div className="detail-owner-value">
+                {lead.employee_count_estimate != null || lead.employee_count_band ? (
+                  <>
+                    <strong style={{ color: "var(--text-primary)" }}>
+                      {lead.employee_count_estimate != null ? `${lead.employee_count_estimate}` : "Estimate unavailable"}
+                      {lead.employee_count_band ? ` (${lead.employee_count_band})` : ""}
+                    </strong>
+                    {lead.employee_count_source && (
+                      <span className="detail-owner-source">via {lead.employee_count_source.replace(/_/g, " ")}</span>
+                    )}
+                    {lead.employee_count_confidence != null && (
+                      <span className="detail-owner-conf">{Math.round(lead.employee_count_confidence * 100)}%</span>
+                    )}
+                  </>
+                ) : (
+                  <span style={{ color: "var(--text-muted)" }}>Unknown</span>
+                )}
+                {token && (
+                  <button
+                    className="btn-link detail-owner-edit-btn"
+                    onClick={() => {
+                      setEmployeeEstimateDraft(lead.employee_count_estimate != null ? String(lead.employee_count_estimate) : "");
+                      setEmployeeBandDraft(lead.employee_count_band ?? "");
+                      setEmployeeEditing(true);
+                    }}
                   >
                     Edit
                   </button>

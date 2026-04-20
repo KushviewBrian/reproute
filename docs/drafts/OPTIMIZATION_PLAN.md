@@ -402,3 +402,178 @@ if request.method == "GET" and response.status_code == 200:
 | Map tile bandwidth per session | ~4MB | ~0.8MB | **80%** |
 | Static asset repeat loads | Full | Cached | **95%** |
 | External TLS handshakes/min | High | Low (pooled) | **70%** |
+---
+
+## Plan Audit — April 19, 2026
+
+> Audited against current codebase. Items marked ✅ are correct and viable as written.
+> Items marked ⚠️ have gaps or require correction before implementation.
+> Items marked ❌ have a structural problem that makes them wrong or unviable as written.
+
+---
+
+### ❌ 2.5 — Pagination conflicts with map display
+
+The plan assumes pagination is straightforwardly applicable to the lead list. It is not for
+the Route tab. All leads must be loaded to render map pins — paginating the list would
+silently leave most pins off the map. As written this recommendation is broken for the
+Route tab.
+
+**Fix:** Scope pagination explicitly to the **Saved tab only** (no map). For the Route tab,
+the current `limit: 100` approach is appropriate; the real fix there is 3.1 (compression)
++ 2.3 (field selection) to shrink the payload rather than paginate it.
+
+---
+
+### ❌ 3.3 — PMTiles URL in `.env` is wrong format
+
+`.env` currently has:
+```
+VITE_MAP_PMTILES_URL=https://protomaps.github.io/basemaps-assets/tiles/v3/{z}/{x}/{y}.mvt
+```
+That is an XYZ tile template URL, not a PMTiles archive. The `PMTiles` library expects a
+single `.pmtiles` file URL (e.g. `https://example.com/basemap.pmtiles`). The `{z}/{x}/{y}`
+template will silently fail — `MapPanel.tsx` will fall through to the raster fallback and
+the "Quick Win" of setting this env var will appear to do nothing.
+
+**Fix:** Obtain a real `.pmtiles` archive URL from `https://build.protomaps.com/` or host
+one on R2/S3. Update `.env` and `render.yaml` together — do not update `render.yaml` first
+or production will silently regress to raster. The plan's recommendation to use Protomaps
+is correct; the existing `.env` value is not.
+
+---
+
+### ⚠️ 2.1 — Batch endpoint routing conflict risk
+
+`POST /leads/validation/batch` — FastAPI will attempt to match `"validation"` against the
+`{business_id}` path segment on `POST /leads/{business_id}/validate`. If the batch route
+is registered after the parameterized route, it will never be reached.
+
+**Fix:** Register the batch route before the parameterized route, or place it at a distinct
+path such as `POST /validation/batch` at the router level.
+
+---
+
+### ⚠️ 1.4 — No cache invalidation on manual "Validate now"
+
+The plan caches validation HTTP results with TTL = `next_check_days`. When a rep triggers
+"Validate now," the expectation is a live fetch. Without explicit cache busting, the
+endpoint will silently return the stale cached result.
+
+**Fix:** Add a `force=true` parameter to the validation trigger path that deletes the Redis
+key before fetching. The `force=true` freshness gate pattern already exists in the OSM
+enrichment service — apply the same approach here.
+
+---
+
+### ⚠️ 2.4 — Audit ORS JSON consumers before stripping
+
+"Strip geometry from `ors_response_json`" is technically sound since `route_geom` stores it
+separately — but the plan does not require auditing all readers of that column first. If any
+path reconstructs route display or degraded-mode geometry from the JSONB field, stripping
+coordinates will silently break it.
+
+**Fix:** Before implementing, run `grep -r "ors_response_json" backend/` and confirm every
+read site only uses `properties.summary` or metadata — not coordinate arrays. Add this as
+an explicit prerequisite step.
+
+---
+
+### ⚠️ 4.1 — `private, max-age=30` on leads risks stale UI
+
+30 seconds of browser caching on `GET /leads` or `GET /routes` means a rep saves a lead,
+navigates back, and may see it as unsaved for up to 30 seconds. The plan does not address
+cache invalidation after mutations.
+
+**Fix:** Use `no-cache` for mutable resources (validates every request but still benefits
+from a future ETag/304 path). Reserve `max-age=30` for `/geocode` only, where the plan
+already correctly applies it.
+
+---
+
+### ⚠️ 4.3 — Indexes must be an Alembic migration, not ad-hoc SQL
+
+The plan presents the composite indexes as raw `CREATE INDEX` statements with no mention of
+wrapping them in an Alembic migration. Running them ad-hoc works once but they will be
+absent on fresh deploys and staging resets.
+
+**Fix:** Add a new migration (e.g. `0009_perf_indexes.py`) with the three
+`CREATE INDEX IF NOT EXISTS` statements. This is the established pattern in the codebase.
+
+---
+
+### ⚠️ 3.5 — ETag note is misleading
+
+"Frontend `fetch` handles `ETag`/`If-None-Match` automatically" is incorrect for
+programmatic `fetch()` calls in React. Automatic ETag handling only applies to browser
+navigation requests. React `fetch()` calls require explicit code to store the ETag from one
+response and attach it as `If-None-Match` on the next call.
+
+**Fix:** Either document the required frontend changes or downgrade 3.5 to P4/deferred —
+the effort is genuinely medium on both sides, not zero-effort on the frontend as implied.
+
+---
+
+### ⚠️ 3.4 — Workbox geocode URL pattern will not match
+
+The `runtimeCaching` pattern uses `/api/geocode\?` but the actual geocode endpoint has no
+`/api` prefix. The pattern will silently never fire.
+
+**Fix:** Verify the actual geocode path (likely `/geocode?`) and correct the regex. Also:
+if PMTiles is active, the `tile.openstreetmap.org` cache rule becomes irrelevant — keep
+both rules and let the inactive one simply never fire, or gate on the env var.
+
+---
+
+### ✅ Items confirmed correct and viable as written
+
+- **3.1 GZipMiddleware** — correct import, correct threshold, accurate impact. Two lines.
+- **3.2 nginx config** — technically correct; `immutable` + 1y for hashed assets is right for Vite output.
+- **2.1 Batch validation concept** — N+1 problem is real, batch approach is correct, 101→2 estimate is accurate. Fix routing conflict noted above before implementing.
+- **1.3 httpx client pooling** — correct pattern with lifespan. Sketch omits `overpass_client`; add it.
+- **1.1 Redis geocode caching** — implementation sketch is correct. 7-day TTL is appropriate.
+- **2.2 Inline `latest_note_text` via SQL JOIN** — the "better" option (SQL subquery, not a new HTTP endpoint) is the right call.
+- **Priority table** — P0/P1/P2/P3 ordering is sound.
+- **Impact estimates** — conservative and defensible given the actual code patterns.
+
+---
+
+## Codex Audit Notes — April 19, 2026 (Pass 2)
+
+This section is a second-pass audit against the live repo state on April 19, 2026.
+
+### Current realism verdict
+
+- The optimization plan is strong and mostly practical.
+- The fastest, highest-confidence wins are still compression + N+1 request reduction.
+- A few items need wording updates so the plan matches current repo facts and rollout risk.
+
+### Confirmed repo-state deltas
+
+- **Compression is still missing** in both layers:
+  - Backend has no `GZipMiddleware` in `backend/app/main.py`.
+  - Frontend `frontend/nginx.conf` is still minimal (no gzip/cache headers).
+- **N+1 patterns are still present**:
+  - Route lead validation hydration (`Promise.allSettled` per lead).
+  - Saved leads note hydration (`listNotes` per item when `latest_note_text` absent).
+- **PMTiles config mismatch still exists in local dev env**:
+  - `frontend/.env` uses an XYZ template URL instead of a `.pmtiles` archive URL.
+  - `frontend/.env.example` already uses the correct `.pmtiles` format.
+
+### Scope corrections to keep
+
+- Keep the existing warning that route-tab pagination is not a safe default (map needs full pin set).
+- Keep ETag as medium effort requiring explicit frontend work (`If-None-Match` handling in API client).
+- Keep index changes gated behind Alembic migration, not ad-hoc SQL.
+
+### Recommended execution order (updated)
+
+1. Ship backend gzip (`3.1`) and nginx gzip/cache headers (`3.2`) first.
+2. Remove N+1 calls next (`2.1` batch validation + `2.2` latest note hydration fix).
+3. Enable geocode cache (`1.1`) and PMTiles with valid archive URL (`3.3`).
+4. Add httpx pooling (`1.3`) and Workbox runtime caching (`3.4`) after the above.
+5. Defer ETag (`3.5`) and field-selection API (`2.3`) until the first optimization wave is measured.
+
+### Measurement note
+
+- Add a short before/after metrics capture per wave (request count per route load, API payload bytes, median route-screen load time). Without this, impact claims remain estimated and can drift from reality.

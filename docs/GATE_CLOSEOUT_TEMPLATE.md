@@ -70,6 +70,18 @@ Evidence:
 - Updated docs:
 - Summary link:
 
+### Gate 5 — Phase 12 Reliability (Owner + Employee)
+- [ ] Candidate provenance table and employee business fields migrated
+- [ ] Manual clear semantics verified (`owner_name: null`, employee clear)
+- [ ] Owner validation field lifecycle verified (including pin/unpin)
+- [ ] Leads/saved/today responses + exports include employee fields
+- [ ] Coverage/source-mix evidence committed (`docs/evidence/phase12_*`)
+
+Evidence:
+- Metrics artifact:
+- API traces:
+- Regression test logs:
+
 ## Final Acceptance Snapshot
 - [ ] No open P0 security issues
 - [ ] CI fully green on `main`
@@ -83,3 +95,5 @@ Evidence:
 - `docs/securityplan.md`
 - `docs/PHASE1_4_VALIDATION.md`
 - `docs/RELIABILITY_EXECUTION_CHECKLIST.md`
+- `docs/ownerplan.md`
+- `docs/evidence/phase12_owner_employee_template.md`

@@ -24,7 +24,8 @@ _ROUTE_EXPORT_COLS = [
     "distance_m", "status", "notes",
     # Phase 10
     "is_blue_collar", "owner_name", "owner_name_source", "owner_name_confidence",
-    "operating_status",
+    "operating_status", "employee_count_estimate", "employee_count_band",
+    "employee_count_source", "employee_count_confidence",
 ]
 
 _SAVED_EXPORT_COLS = [
@@ -32,7 +33,8 @@ _SAVED_EXPORT_COLS = [
     "address", "city", "state", "zip", "source", "status", "notes",
     # Phase 10
     "is_blue_collar", "owner_name", "owner_name_source", "owner_name_confidence",
-    "operating_status",
+    "operating_status", "employee_count_estimate", "employee_count_band",
+    "employee_count_source", "employee_count_confidence",
 ]
 
 
@@ -94,6 +96,10 @@ async def export_route_leads_csv(
             lead.get("owner_name_source") or "",
             f"{int(round(conf * 100))}%" if conf is not None else "",
             lead.get("operating_status") or "",
+            lead.get("employee_count_estimate") or "",
+            lead.get("employee_count_band") or "",
+            lead.get("employee_count_source") or "",
+            f"{int(round((lead.get('employee_count_confidence') or 0) * 100))}%" if lead.get("employee_count_confidence") is not None else "",
         ])
 
     output.seek(0)
@@ -126,6 +132,10 @@ async def export_saved_leads_csv(
                 Business.owner_name,
                 Business.owner_name_source,
                 Business.owner_name_confidence,
+                Business.employee_count_estimate,
+                Business.employee_count_band,
+                Business.employee_count_source,
+                Business.employee_count_confidence,
             )
             .join(Business, Business.id == SavedLead.business_id, isouter=True)
             .where(SavedLead.user_id == user.id)
@@ -168,6 +178,10 @@ async def export_saved_leads_csv(
             row.owner_name_source or "",
             f"{int(round(float(conf) * 100))}%" if conf is not None else "",
             row.operating_status or "",
+            row.employee_count_estimate or "",
+            row.employee_count_band or "",
+            row.employee_count_source or "",
+            f"{int(round(float(row.employee_count_confidence) * 100))}%" if row.employee_count_confidence is not None else "",
         ]
 
     output = io.StringIO()

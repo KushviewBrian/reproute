@@ -1,6 +1,6 @@
 # RepRoute Master Roadmap
 
-Updated: April 19, 2026 (Phase 11 code complete — full dark-theme UI overhaul shipped, all gates 1–3 implemented)
+Updated: April 20, 2026 (Phase 12 code implementation landed — staging evidence + backend pytest runtime verification pending)
 
 ##
 Developer notes:
@@ -24,6 +24,7 @@ This roadmap is the canonical execution plan for RepRoute. It consolidates and s
 | Reliability gate execution checklist | `docs/RELIABILITY_EXECUTION_CHECKLIST.md` |
 | Gate closeout reporting template | `docs/GATE_CLOSEOUT_TEMPLATE.md` |
 | Lead sorting, grouping, and owner-contact spec | `docs/phase10_lead_intelligence.md` |
+| Owner/contact reliability and employee intelligence | `docs/ownerplan.md` |
 
 **If any supporting document conflicts with this file, this roadmap is the source of truth for delivery order and gate criteria.**
 
@@ -77,9 +78,10 @@ RepRoute is a route-aware field sales prospecting platform for B2B reps. Insuran
 
 ### Confirmed by recent checks
 
-- Backend compile check passes (`python3 -m compileall backend/app scripts`)
+- Backend compile check passes (`python3 -m compileall backend/app backend/scripts`)
 - Frontend build passes (`npm run build`)
 - Frontend typecheck passes (`npm run typecheck`)
+- Backend pytest execution pending in this local runtime (`python3 -m pytest` currently unavailable due to missing `pytest` module)
 - CI warning/regression fixes landed for startup lifecycle deprecation, raw-request-body test warning, and scoring saturation edge case
 - Manual prototype flow verified: fetch, save, note, saved view rendering
 - Post-hardening frontend checks pass after queue-sync updates (`npm run typecheck`, `npm run build`)
@@ -108,6 +110,7 @@ RepRoute is a route-aware field sales prospecting platform for B2B reps. Insuran
 - Phase 0 baseline docs complete: `backend/.env.example`, `frontend/.env.example`, root `.env.example` with all env vars through Phase 7; `README.md` updated with accurate setup steps and runbook reference
 - Phase 11 code complete (Gates 1–3): full dark-theme UI overhaul — `#0F1923` instrument palette, DM Sans, design tokens; app shell with icon rail sidebar + mobile bottom nav; toast event bus (`toast.ts` + `ToastContainer.tsx`); route form Phase A/B split with loading progress; filter chip bar; lead card redesign with overflow menu, note expansion, nearby badge, skeleton; Today tab with resume-route and overdue cards; Saved tab with status tabs, sort popover (5 modes), search, export menu, inline status dots; MapPanel clustering (clusterMaxZoom 11), score-tiered circles, blue-collar dot, selection pulse, user-position marker; detail panel right-rail desktop split + mobile bottom sheet; detail interior with status segmented control, score bar charts, geo/tel/visit action buttons, call-logged UX, owner inline edit, validation collapsible, notes compose area; live location mode (`watchPosition` + `clearWatch`); PWA manifest dark theme; commit a3b51eb (main, April 19 2026). Gate 4 polish (steps 14–18) remaining.
 - Phase 10 code complete: `is_blue_collar` + owner-contact columns (migration 0008), `classify()` returns `(insurance_class, is_blue_collar)` tuple, expanded blue-collar category mappings (auto detailing, towing, weld/fab, pest, lawn, pressure wash, painting, cleaning, locksmith), +5 fit-score bonus in v1 and v2, OSM `operator` tag extraction → `owner_name`, JSON-LD Person + website-text heuristic owner extraction in validation service, `sort_by` / `sort_dir` / `group_by` on `GET /leads` and `GET /saved-leads` (9 sort modes, 7 group modes), expanded filter params (`blue_collar`, `has_owner_name`, `operating_status`, `score_band`, `has_notes`, `saved_after`, `saved_before`, `overdue_only`, `untouched_only`), Today view gains `blue_collar_today` and `has_owner_name` sections, Phase 10 export columns added to both CSVs (`is_blue_collar`, `owner_name`, `owner_name_source`, `owner_name_confidence` as %, `operating_status`), grouped CSV export via `?group_by=`, manual `owner_name` write via `PATCH /saved-leads/{id}` (source=manual, confidence=1.0, never overwritten), `ingest_overture.py` and `backfill_classification.py` updated for tuple unpack + `is_blue_collar` upsert; all 105 backend tests passing
+- Phase 12 code implementation complete (all audit gaps closed April 20, 2026): migration `0009_owner_employee_reliability` adds `business_contact_candidate` provenance table and `business.employee_count_*` canonical fields; shared owner/employee promotion engine + source confidence registry + person-name guard added; validation lifecycle now includes `owner_name`; website validation promotes owner + employee candidates via `_extract_owner_from_html()` / `_extract_employee_count_from_html()` called in `process_run_by_id()`; OSM `operator` tag wired to `promote_owner_name(source="osm_operator")` in `apply_enrichment()`; `PATCH /saved-leads/{id}` supports manual set/clear semantics for owner/employee; leads/saved/today responses and CSV exports now include employee fields and filters (`has_employee_count`, `employee_count_band`); minimal UI exposure/edit controls added in lead detail/list/saved/today surfaces; audit fixes: `validation_state` now populated in saved-leads responses via weighted-avg confidence subquery; `group_by` param wired in `list_saved_leads` (returns grouped JSON); `validation_confidence` sort mode implemented; `_saved_group_key()` handles `validation_state` bucket; POST/PATCH saved-lead endpoints return full hydrated response; `listSavedLeads()` frontend client expanded with all Phase 10 sort/filter/group params; shared `validation_client` HTTP client added to pool; 120 backend tests passing
 - Phase 8 prerequisite complete: `docs/RUNBOOK.md` (266 lines) covering ingestion trigger, all quota/outage scenarios (ORS/Photon/Overpass/Clerk/validation), DB migration recovery, Redis down, CF Worker troubleshooting, Render + CF Pages rollback, support contacts, pilot P0-P3 SLA
 - `docs/REQUIRED_SECRETS.md` and `docs/DEPLOYMENT_GUIDE.md` updated with OVERPASS_* and ENRICHMENT_* env vars
 
@@ -1280,6 +1283,59 @@ Each step is a discrete, testable, mergeable unit. Steps within a gate are paral
 
 ---
 
+### Phase 12 — Owner/Contact Reliability + Employee Count Intelligence
+
+**Status: Code implementation complete — all audit-identified gaps closed (April 20, 2026); staging evidence pending**
+
+**Scope:**
+- Treat owner/contact and employee count as reliability-governed fields with source provenance, confidence scoring, and explicit manual override semantics.
+- Keep Phase 11 layout/theme intact; only minimal UI exposure/edit controls are in scope.
+
+**Deliverables:**
+- Schema:
+  - `business_contact_candidate` audit table for owner/employee candidates.
+  - `business.employee_count_*` canonical fields (`estimate`, `band`, `source`, `confidence`, `last_checked_at`).
+- Promotion engine:
+  - Shared source confidence registry and promotion rules for owner + employee fields.
+  - Strict person-name guard on all non-manual owner writes.
+  - Candidate audit rows written for accepted and rejected values.
+- Validation lifecycle:
+  - `owner_name` added to validation field lifecycle and pin/unpin flow.
+  - Website validation promotion path now applies extracted owner + employee values.
+- API contracts:
+  - `PATCH /saved-leads/{id}` supports `owner_name: string | null` (clear-to-null re-enables automation).
+  - `PATCH /saved-leads/{id}` supports manual `employee_count_estimate` / `employee_count_band`.
+  - `GET /routes/{id}/leads`, `GET /saved-leads`, `GET /saved-leads/today`, and CSV exports include employee fields.
+  - Filter support added: `has_employee_count`, `employee_count_band`.
+- Governance/docs:
+  - `docs/ownerplan.md` is canonical source document for this phase.
+  - Phase 12 evidence template added under `docs/evidence/`.
+
+**Test focus:**
+- Unit:
+  - person-name guard accepts plausible names, rejects entity/noise/url patterns.
+  - employee extraction parsing (`numberOfEmployees`, text heuristics) and malformed-value rejection.
+  - promotion precedence and manual lock behavior for owner/employee fields.
+- API:
+  - `PATCH /saved-leads/{id}` manual set/clear semantics for owner + employee.
+  - validation pin/unpin includes `owner_name`.
+  - leads/saved endpoints and CSVs include employee fields and filter behavior.
+- Regression:
+  - existing route → lead → save → note flow unchanged.
+  - website/phone validation behavior unchanged outside owner/employee additions.
+
+**Exit criteria:**
+- Staging evidence package committed with:
+  - owner coverage %, employee coverage %, source mix snapshot.
+  - sampled precision audit notes per source.
+  - no regression in core workflow and export flows.
+- Backend tests green and frontend `typecheck`/`build` green.
+- Phase 12 gate checklist completed in the closeout template.
+
+**Blocking dependencies:** Phase 10 complete; Redis and auth/session model unchanged.
+
+---
+
 ## Phase Status Table
 
 | Phase | Name | Status | Confidence |
@@ -1295,7 +1351,8 @@ Each step is a discrete, testable, mergeable unit. Steps within a gate are paral
 | 8 | MVP verification and QA | Not started | Low |
 | 9 | Pilot and launch | Not started | Low |
 | 10 | Lead intelligence — sorting, grouping, blue-collar, owner contact | Code complete — evidence pending | Medium |
-| 11 | UI overhaul + field workflow intelligence | Not started | Low |
+| 11 | UI overhaul + field workflow intelligence | Code complete (gates 1–3), polish gate pending | Medium |
+| 12 | Owner/contact reliability + employee-count intelligence | Code complete (all audit gaps closed April 20 2026); staging evidence pending | Medium |
 
 ---
 
@@ -1319,6 +1376,10 @@ Each step is a discrete, testable, mergeable unit. Steps within a gate are paral
    - Run `validate_scoring.py` on 5 routes; commit `other_unknown_rate`
 5. **Verify Phase 6 Overpass enrichment in staging** — set `OVERPASS_TIMEOUT_SECONDS=10` (and `OVERPASS_ENDPOINT=https://overpass.kumi.systems/api/interpreter` if the primary still times out) in Render env vars; save a lead and confirm `osm_phone` or `osm_website` populates in Supabase within 30s.
 6. **Use gate closeout workflow for each merge/deploy** — attach `docs/GATE_CLOSEOUT_TEMPLATE.md` entries with rollback notes and artifact links before marking any gate complete.
+7. **Close Phase 12 evidence and runtime verification**:
+   - ~~Run backend pytest~~ ✅ 120 tests passing (April 20, 2026)
+   - Validate staging behavior for owner/employee clear semantics, filters, validation lifecycle, and CSV columns
+   - Generate and commit a Phase 12 metrics artifact with `python3 backend/scripts/aggregate_contact_metrics.py`
 
 ---
 

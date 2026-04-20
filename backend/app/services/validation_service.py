@@ -26,7 +26,7 @@ from app.models.saved_lead import SavedLead
 from app.utils.redis_client import redis_client
 
 
-VALIDATION_FIELDS = {"website", "phone"}
+VALIDATION_FIELDS = {"website", "phone", "owner_name"}
 
 
 @dataclass
@@ -90,7 +90,7 @@ async def enqueue_validation_run(
     run = LeadValidationRun(
         business_id=business_id,
         user_id=user_id,
-        requested_checks=normalized_checks or ["website", "phone"],
+        requested_checks=normalized_checks or ["website", "phone", "owner_name"],
         status="queued",
     )
     db.add(run)
@@ -142,7 +142,7 @@ def _overall_label(confidence: float | None) -> str:
 def overall_confidence(results: list[FieldResult]) -> float | None:
     if not results:
         return None
-    weights = {"website": 35.0, "phone": 30.0}
+    weights = {"website": 35.0, "phone": 30.0, "owner_name": 35.0}
     total_weight = 0.0
     weighted = 0.0
     for result in results:
@@ -249,6 +249,13 @@ def _classify_request_failure(exc: Exception) -> tuple[str, str, float]:
 import json as _json
 import re as _re
 
+from app.services.contact_intelligence import (
+    employee_count_band_from_estimate,
+    is_probable_person_name,
+    promote_employee_count,
+    promote_owner_name,
+)
+from app.utils.http_clients import get_validation_client
 
 def _extract_owner_from_html(html):
     # Returns (name, source) or (None, None)
@@ -261,13 +268,13 @@ def _extract_owner_from_html(html):
                     continue
                 if item.get("@type") == "Person":
                     name = (item.get("name") or "").strip()
-                    if name:
+                    if is_probable_person_name(name):
                         return name, "website_jsonld"
                 for key in ("employee", "founder", "owner"):
                     person = item.get(key)
                     if isinstance(person, dict) and person.get("@type") == "Person":
                         name = (person.get("name") or "").strip()
-                        if name:
+                        if is_probable_person_name(name):
                             return name, "website_jsonld"
         except Exception:
             continue
@@ -275,10 +282,66 @@ def _extract_owner_from_html(html):
         m = pattern.search(html)
         if m:
             name = m.group(1).strip()
-            words = name.split()
-            if 1 <= len(words) <= 5 and len(name) <= 60 and not any(c.isdigit() for c in name):
+            if is_probable_person_name(name):
                 return name, "website_text"
     return None, None
+
+
+def _parse_employee_count_value(raw) -> tuple[int | None, str | None]:
+    if raw is None:
+        return None, None
+    if isinstance(raw, (int, float)) and int(raw) > 0:
+        estimate = int(raw)
+        return estimate, employee_count_band_from_estimate(estimate)
+    if isinstance(raw, dict):
+        for key in ("value", "minValue", "maxValue"):
+            if key in raw:
+                est, band = _parse_employee_count_value(raw.get(key))
+                if est is not None or band is not None:
+                    return est, band
+    if isinstance(raw, str):
+        text = raw.strip()
+        if not text:
+            return None, None
+        m_range = _re.search(r"(\d{1,5})\s*[-–]\s*(\d{1,5})", text)
+        if m_range:
+            lo = int(m_range.group(1))
+            hi = int(m_range.group(2))
+            estimate = max(lo, int((lo + hi) / 2))
+            return estimate, f"{lo}-{hi}"
+        m_single = _re.search(r"\b(\d{1,6})\b", text)
+        if m_single:
+            estimate = int(m_single.group(1))
+            return estimate, employee_count_band_from_estimate(estimate)
+    return None, None
+
+
+def _extract_employee_count_from_html(html: str) -> tuple[int | None, str | None, str | None]:
+    for script_match in _RE_JSONLD.finditer(html):
+        try:
+            data = _json.loads(script_match.group(1))
+            data_list = data if isinstance(data, list) else [data]
+            for item in data_list:
+                if not isinstance(item, dict):
+                    continue
+                estimate, band = _parse_employee_count_value(item.get("numberOfEmployees"))
+                if estimate is not None or band is not None:
+                    return estimate, band, "website_jsonld"
+        except Exception:
+            continue
+
+    text_patterns = [
+        _re.compile(r"(?:team of|staff of|about|around)\s+(\d{1,5})", _re.IGNORECASE),
+        _re.compile(r"(\d{1,5})\s+(?:employees|employee|team members)", _re.IGNORECASE),
+    ]
+    for pattern in text_patterns:
+        m = pattern.search(html)
+        if not m:
+            continue
+        estimate = int(m.group(1))
+        if estimate > 0:
+            return estimate, employee_count_band_from_estimate(estimate), "website_text"
+    return None, None, None
 
 
 _RE_JSONLD = _re.compile(
@@ -322,8 +385,8 @@ async def _validate_website(website: str | None) -> FieldResult:
         )
     for attempt in range(2):
         try:
-            async with httpx.AsyncClient(timeout=settings.validation_http_timeout_seconds, follow_redirects=True) as client:
-                resp = await client.get(normalized)
+            client = get_validation_client()
+            resp = await client.get(normalized)
             if resp.status_code in {403, 429}:
                 return FieldResult(
                     field_name="website",
@@ -347,6 +410,7 @@ async def _validate_website(website: str | None) -> FieldResult:
                     next_check_days=14,
                 )
             owner_name, owner_source = _extract_owner_from_html(resp.text)
+            employee_count_estimate, employee_count_band, employee_count_source = _extract_employee_count_from_html(resp.text)
             return FieldResult(
                 field_name="website",
                 state="valid",
@@ -359,6 +423,9 @@ async def _validate_website(website: str | None) -> FieldResult:
                     "content_length": len(resp.text),
                     "owner_name": owner_name,
                     "owner_name_source": owner_source,
+                    "employee_count_estimate": employee_count_estimate,
+                    "employee_count_band": employee_count_band,
+                    "employee_count_source": employee_count_source,
                 },
                 next_check_days=30,
             )
@@ -443,6 +510,50 @@ async def _validate_phone(phone: str | None, website_evidence: FieldResult | Non
     )
 
 
+async def _validate_owner_name(business: Business, website_evidence: FieldResult | None) -> FieldResult:
+    owner_name = business.owner_name
+    owner_source = business.owner_name_source
+    if website_evidence and website_evidence.state == "valid":
+        extracted = website_evidence.evidence_json.get("owner_name")
+        extracted_source = website_evidence.evidence_json.get("owner_name_source")
+        if isinstance(extracted, str) and extracted.strip():
+            owner_name = extracted.strip()
+            owner_source = extracted_source or owner_source
+
+    if owner_name and is_probable_person_name(owner_name):
+        return FieldResult(
+            field_name="owner_name",
+            state="valid",
+            confidence=85.0 if owner_source in {"website_jsonld", "manual"} else 70.0,
+            failure_class=None,
+            value_current=business.owner_name,
+            value_normalized=owner_name,
+            evidence_json={"source": owner_source or "unknown"},
+            next_check_days=30,
+        )
+    if owner_name:
+        return FieldResult(
+            field_name="owner_name",
+            state="warning",
+            confidence=35.0,
+            failure_class="quality_rejected",
+            value_current=business.owner_name,
+            value_normalized=None,
+            evidence_json={"source": owner_source or "unknown"},
+            next_check_days=7,
+        )
+    return FieldResult(
+        field_name="owner_name",
+        state="unknown",
+        confidence=0.0,
+        failure_class="missing",
+        value_current=None,
+        value_normalized=None,
+        evidence_json={"detail": "owner missing"},
+        next_check_days=30,
+    )
+
+
 async def upsert_field_validation(db: AsyncSession, business_id: UUID, result: FieldResult) -> None:
     now = datetime.now(UTC)
     stmt = (
@@ -499,7 +610,7 @@ async def process_run_by_id(
         await db.commit()
         return run, []
 
-    all_checks = [c for c in (run.requested_checks or ["website", "phone"]) if c in VALIDATION_FIELDS]
+    all_checks = [c for c in (run.requested_checks or ["website", "phone", "owner_name"]) if c in VALIDATION_FIELDS]
     # Exclude fields the user has pinned — pinned fields are authoritative and skipped by automation.
     pinned_fields: set[str] = set()
     if all_checks:
@@ -524,10 +635,38 @@ async def process_run_by_id(
             website_result = await _validate_website(business.website)
             results.append(website_result)
             await upsert_field_validation(db, business.id, website_result)
+            if website_result.state == "valid":
+                evidence = website_result.evidence_json or {}
+                owner_candidate = evidence.get("owner_name")
+                owner_source = evidence.get("owner_name_source") or "website_text"
+                if isinstance(owner_candidate, str) and owner_candidate.strip():
+                    await promote_owner_name(
+                        db,
+                        business,
+                        owner_name=owner_candidate.strip(),
+                        source=str(owner_source),
+                        evidence_json={"from_validation_run_id": str(run.id), "field": "website"},
+                    )
+                employee_estimate = evidence.get("employee_count_estimate")
+                employee_band = evidence.get("employee_count_band")
+                employee_source = str(evidence.get("employee_count_source") or "website_text")
+                if employee_estimate is not None or employee_band:
+                    await promote_employee_count(
+                        db,
+                        business,
+                        estimate=int(employee_estimate) if employee_estimate is not None else None,
+                        band=str(employee_band) if employee_band else None,
+                        source=employee_source,
+                        evidence_json={"from_validation_run_id": str(run.id), "field": "website"},
+                    )
         if "phone" in checks:
             phone_result = await _validate_phone(business.phone, website_result)
             results.append(phone_result)
             await upsert_field_validation(db, business.id, phone_result)
+        if "owner_name" in checks:
+            owner_result = await _validate_owner_name(business, website_result)
+            results.append(owner_result)
+            await upsert_field_validation(db, business.id, owner_result)
         business.last_validated_at = datetime.now(UTC)
         run.status = "done"
         run.error_message = None

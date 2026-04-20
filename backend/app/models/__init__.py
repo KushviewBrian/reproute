@@ -1,4 +1,5 @@
 from app.models.business import Business
+from app.models.business_contact_candidate import BusinessContactCandidate
 from app.models.import_job import ImportJob
 from app.models.lead_expansion_candidate import LeadExpansionCandidate
 from app.models.lead_field_validation import LeadFieldValidation
@@ -14,6 +15,7 @@ from app.models.user import User
 __all__ = [
     "User",
     "Business",
+    "BusinessContactCandidate",
     "ImportJob",
     "LeadValidationRun",
     "LeadFieldValidation",

@@ -229,6 +229,8 @@ async def fetch_leads(
     sort_dir: str = "desc",
     blue_collar: bool | None = None,
     has_owner_name: bool | None = None,
+    has_employee_count: bool | None = None,
+    employee_count_band: str | None = None,
     min_validation_confidence: float | None = None,
     validation_state: str | None = None,
     operating_status: str | None = None,
@@ -260,6 +262,10 @@ async def fetch_leads(
             Business.owner_name,
             Business.owner_name_source,
             Business.owner_name_confidence,
+            Business.employee_count_estimate,
+            Business.employee_count_band,
+            Business.employee_count_source,
+            Business.employee_count_confidence,
             Business.operating_status,
             literal_column("ST_Y(business.geom::geometry)").label("lat"),
             literal_column("ST_X(business.geom::geometry)").label("lng"),
@@ -306,6 +312,13 @@ async def fetch_leads(
             filters.append(Business.owner_name.is_(None))
     if operating_status:
         filters.append(Business.operating_status == operating_status)
+    if has_employee_count is not None:
+        if has_employee_count:
+            filters.append(Business.employee_count_estimate.is_not(None))
+        else:
+            filters.append(Business.employee_count_estimate.is_(None))
+    if employee_count_band:
+        filters.append(Business.employee_count_band == employee_count_band)
     if score_band:
         band_filters = {"high": effective_final_expr >= 70, "medium": (effective_final_expr >= 40) & (effective_final_expr < 70), "low": effective_final_expr < 40}
         if score_band in band_filters:
@@ -370,6 +383,10 @@ async def fetch_leads(
             "owner_name": row["owner_name"],
             "owner_name_source": row["owner_name_source"],
             "owner_name_confidence": float(row["owner_name_confidence"]) if row["owner_name_confidence"] is not None else None,
+            "employee_count_estimate": row["employee_count_estimate"],
+            "employee_count_band": row["employee_count_band"],
+            "employee_count_source": row["employee_count_source"],
+            "employee_count_confidence": float(row["employee_count_confidence"]) if row["employee_count_confidence"] is not None else None,
             "operating_status": row["operating_status"],
             "final_score": (
                 row["final_score_v2"] if use_v2 and row["final_score_v2"] is not None else row["final_score"]

@@ -95,6 +95,10 @@ export type Lead = {
   owner_name: string | null;
   owner_name_source: string | null;
   owner_name_confidence: number | null;
+  employee_count_estimate: number | null;
+  employee_count_band: string | null;
+  employee_count_source: string | null;
+  employee_count_confidence: number | null;
 };
 
 export type SavedLead = {
@@ -119,8 +123,13 @@ export type SavedLead = {
   owner_name: string | null;
   owner_name_source: string | null;
   owner_name_confidence: number | null;
+  employee_count_estimate: number | null;
+  employee_count_band: string | null;
+  employee_count_source: string | null;
+  employee_count_confidence: number | null;
   insurance_class: string | null;
   operating_status: string | null;
+  validation_state?: string | null;
 };
 
 export type SavedLeadsTodayResponse = {
@@ -173,6 +182,8 @@ export async function fetchLeads(
     sortDir?: "asc" | "desc";
     blueCollar?: boolean;
     hasOwnerName?: boolean;
+    hasEmployeeCount?: boolean;
+    employeeCountBand?: string;
     scoreBand?: "high" | "medium" | "low";
   },
 ) {
@@ -187,6 +198,8 @@ export async function fetchLeads(
   if (opts?.sortDir) params.set("sort_dir", opts.sortDir);
   if (opts?.blueCollar !== undefined) params.set("blue_collar", String(opts.blueCollar));
   if (opts?.hasOwnerName !== undefined) params.set("has_owner_name", String(opts.hasOwnerName));
+  if (opts?.hasEmployeeCount !== undefined) params.set("has_employee_count", String(opts.hasEmployeeCount));
+  if (opts?.employeeCountBand) params.set("employee_count_band", opts.employeeCountBand);
   if (opts?.scoreBand) params.set("score_band", opts.scoreBand);
 
   return req<{ route_id: string; leads: Lead[]; total: number; filtered: number }>(
@@ -212,10 +225,57 @@ export async function reverseGeocode(lat: number, lng: number, token?: string) {
   );
 }
 
-export async function listSavedLeads(token?: string, status?: string, dueBefore?: string) {
+export type ListSavedLeadsOptions = {
+  status?: string;
+  dueBefore?: string;
+  limit?: number;
+  offset?: number;
+  sortBy?: string;
+  sortDir?: "asc" | "desc";
+  blueCollar?: boolean;
+  hasOwnerName?: boolean;
+  hasEmployeeCount?: boolean;
+  employeeCountBand?: string;
+  operatingStatus?: string;
+  scoreBand?: "high" | "medium" | "low";
+  hasNotes?: boolean;
+  savedAfter?: string;
+  savedBefore?: string;
+  overdueOnly?: boolean;
+  untouchedOnly?: boolean;
+  groupBy?: string;
+};
+
+export async function listSavedLeads(
+  token?: string,
+  statusOrOptions?: string | ListSavedLeadsOptions,
+  dueBefore?: string,
+): Promise<SavedLead[]> {
   const params = new URLSearchParams();
-  if (status) params.set("status", status);
-  if (dueBefore) params.set("due_before", dueBefore);
+  if (typeof statusOrOptions === "string") {
+    if (statusOrOptions) params.set("status", statusOrOptions);
+    if (dueBefore) params.set("due_before", dueBefore);
+  } else if (statusOrOptions != null) {
+    const o = statusOrOptions;
+    if (o.status) params.set("status", o.status);
+    if (o.dueBefore) params.set("due_before", o.dueBefore);
+    if (o.limit != null) params.set("limit", String(o.limit));
+    if (o.offset != null) params.set("offset", String(o.offset));
+    if (o.sortBy) params.set("sort_by", o.sortBy);
+    if (o.sortDir) params.set("sort_dir", o.sortDir);
+    if (o.blueCollar != null) params.set("blue_collar", String(o.blueCollar));
+    if (o.hasOwnerName != null) params.set("has_owner_name", String(o.hasOwnerName));
+    if (o.hasEmployeeCount != null) params.set("has_employee_count", String(o.hasEmployeeCount));
+    if (o.employeeCountBand) params.set("employee_count_band", o.employeeCountBand);
+    if (o.operatingStatus) params.set("operating_status", o.operatingStatus);
+    if (o.scoreBand) params.set("score_band", o.scoreBand);
+    if (o.hasNotes != null) params.set("has_notes", String(o.hasNotes));
+    if (o.savedAfter) params.set("saved_after", o.savedAfter);
+    if (o.savedBefore) params.set("saved_before", o.savedBefore);
+    if (o.overdueOnly != null) params.set("overdue_only", String(o.overdueOnly));
+    if (o.untouchedOnly != null) params.set("untouched_only", String(o.untouchedOnly));
+    if (o.groupBy) params.set("group_by", o.groupBy);
+  }
   const q = params.toString() ? `?${params.toString()}` : "";
   return req<SavedLead[]>(`/saved-leads${q}`, {}, token);
 }
@@ -230,7 +290,15 @@ export async function saveLead(payload: { business_id: string; route_id?: string
 
 export async function updateSavedLead(
   id: string,
-  payload: { status?: string; priority?: number; next_follow_up_at?: string | null; last_contact_attempt_at?: string | null; owner_name?: string | null },
+  payload: {
+    status?: string;
+    priority?: number;
+    next_follow_up_at?: string | null;
+    last_contact_attempt_at?: string | null;
+    owner_name?: string | null;
+    employee_count_estimate?: number | null;
+    employee_count_band?: string | null;
+  },
   token?: string,
 ) {
   return req<SavedLead>(`/saved-leads/${id}`, { method: "PATCH", body: JSON.stringify(payload) }, token);
@@ -325,7 +393,7 @@ export async function getValidationStatesBatch(
 export async function triggerValidation(businessId: string, token?: string): Promise<{ run_id: string; status: string }> {
   return req<{ run_id: string; status: string }>(
     `/leads/${encodeURIComponent(businessId)}/validate`,
-    { method: "POST", body: JSON.stringify({ requested_checks: ["website", "phone"] }) },
+    { method: "POST", body: JSON.stringify({ requested_checks: ["website", "phone", "owner_name"] }) },
     token,
   );
 }

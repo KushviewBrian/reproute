@@ -2,13 +2,14 @@ from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
-from sqlalchemy import and_, exists, func, select
+from sqlalchemy import and_, case, exists, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user
 from app.db.session import get_db
 from app.models.business import Business
+from app.models.lead_field_validation import LeadFieldValidation
 from app.models.lead_score import LeadScore
 from app.models.note import Note
 from app.models.route import Route
@@ -23,7 +24,9 @@ from app.schemas.saved_lead import (
     TodayRecentRoute,
     UpdateSavedLeadRequest,
 )
+from app.services.contact_intelligence import employee_count_band_from_estimate, promote_employee_count, promote_owner_name
 from app.services.enrichment_service import enrich_saved_lead
+from app.services.validation_service import _overall_label
 from app.utils.rate_limit import enforce_rate_limit
 
 router = APIRouter()
@@ -38,6 +41,40 @@ GROUP_BY_SAVED_CONFIGS = {
     "insurance_class", "blue_collar", "score_band",
     "validation_state", "follow_up_urgency", "contact_status", "owner_name_status",
 }
+
+
+def _validation_conf_subq():
+    """Weighted avg confidence subquery from lead_field_validation per business."""
+    weight_expr = (
+        func.sum(
+            case(
+                (LeadFieldValidation.field_name == "website", LeadFieldValidation.confidence * 35),
+                (LeadFieldValidation.field_name == "phone", LeadFieldValidation.confidence * 30),
+                (LeadFieldValidation.field_name == "owner_name", LeadFieldValidation.confidence * 35),
+                else_=LeadFieldValidation.confidence * 0,
+            )
+        )
+        / func.nullif(
+            func.sum(
+                case(
+                    (LeadFieldValidation.field_name == "website", 35),
+                    (LeadFieldValidation.field_name == "phone", 30),
+                    (LeadFieldValidation.field_name == "owner_name", 35),
+                    else_=0,
+                )
+            ),
+            0,
+        )
+    )
+    return (
+        select(
+            LeadFieldValidation.business_id.label("biz_id"),
+            weight_expr.label("avg_confidence"),
+        )
+        .where(LeadFieldValidation.confidence.is_not(None))
+        .group_by(LeadFieldValidation.business_id)
+        .subquery("val_agg")
+    )
 
 
 def _format_route_label(origin_label, destination_label) -> str | None:
@@ -70,8 +107,17 @@ def _to_saved_lead_item(row, notes_by_business: dict) -> SavedLeadItem:
         owner_name=row.owner_name if hasattr(row, "owner_name") else None,
         owner_name_source=row.owner_name_source if hasattr(row, "owner_name_source") else None,
         owner_name_confidence=float(row.owner_name_confidence) if (hasattr(row, "owner_name_confidence") and row.owner_name_confidence is not None) else None,
+        employee_count_estimate=row.employee_count_estimate if hasattr(row, "employee_count_estimate") else None,
+        employee_count_band=row.employee_count_band if hasattr(row, "employee_count_band") else None,
+        employee_count_source=row.employee_count_source if hasattr(row, "employee_count_source") else None,
+        employee_count_confidence=float(row.employee_count_confidence) if (hasattr(row, "employee_count_confidence") and row.employee_count_confidence is not None) else None,
         insurance_class=row.insurance_class if hasattr(row, "insurance_class") else None,
         operating_status=row.operating_status if hasattr(row, "operating_status") else None,
+        validation_state=_overall_label(
+            float(row.avg_confidence)
+            if (hasattr(row, "avg_confidence") and row.avg_confidence is not None)
+            else None
+        ),
     )
 
 
@@ -93,7 +139,8 @@ async def _hydrate_saved_lead_items(db, user_id, rows) -> list[SavedLeadItem]:
 
 
 def _saved_leads_base_query(user_id: UUID):
-    return (
+    val_subq = _validation_conf_subq()
+    q = (
         select(
             SavedLead,
             Business.name,
@@ -108,9 +155,14 @@ def _saved_leads_base_query(user_id: UUID):
             Business.owner_name,
             Business.owner_name_source,
             Business.owner_name_confidence,
+            Business.employee_count_estimate,
+            Business.employee_count_band,
+            Business.employee_count_source,
+            Business.employee_count_confidence,
             Route.origin_label,
             Route.destination_label,
             LeadScore.final_score,
+            val_subq.c.avg_confidence,
         )
         .join(Business, Business.id == SavedLead.business_id, isouter=True)
         .join(Route, Route.id == SavedLead.route_id, isouter=True)
@@ -119,11 +171,13 @@ def _saved_leads_base_query(user_id: UUID):
             (LeadScore.route_id == SavedLead.route_id) & (LeadScore.business_id == SavedLead.business_id),
             isouter=True,
         )
+        .join(val_subq, val_subq.c.biz_id == SavedLead.business_id, isouter=True)
         .where(SavedLead.user_id == user_id)
     )
+    return q, val_subq
 
 
-def _apply_saved_sort(q, sort_by: str, sort_dir: str):
+def _apply_saved_sort(q, sort_by: str, sort_dir: str, val_subq=None):
     asc = sort_dir.lower() == "asc"
     if sort_by == "blue_collar_score":
         return q.order_by(Business.is_blue_collar.desc(), LeadScore.final_score.desc().nulls_last())
@@ -139,6 +193,9 @@ def _apply_saved_sort(q, sort_by: str, sort_dir: str):
         return q.order_by(SavedLead.created_at.asc() if asc else SavedLead.created_at.desc())
     if sort_by == "score":
         return q.order_by(LeadScore.final_score.desc().nulls_last() if not asc else LeadScore.final_score.asc().nulls_last())
+    if sort_by == "validation_confidence" and val_subq is not None:
+        col = val_subq.c.avg_confidence
+        return q.order_by(col.asc().nulls_last() if asc else col.desc().nulls_last())
     # default: follow_up urgency then created_at
     return q.order_by(SavedLead.next_follow_up_at.asc().nulls_last(), SavedLead.created_at.desc())
 
@@ -173,6 +230,9 @@ def _saved_group_key(item: SavedLeadItem, group_by: str, now: datetime) -> tuple
         if fu < start_of_tomorrow:
             return "due_today", "Due Today"
         return "upcoming", "Upcoming"
+    if group_by == "validation_state":
+        state = item.validation_state or "Unchecked"
+        return state.lower().replace(" ", "_"), state
     return "unknown", "Unknown"
 
 
@@ -182,6 +242,7 @@ _SAVED_GROUP_ORDER = {
     "score_band": ["high", "medium", "low"],
     "blue_collar": ["blue_collar", "other"],
     "owner_name_status": ["has_owner_name", "no_owner_name"],
+    "validation_state": ["validated", "mostly_valid", "needs_review", "low_confidence", "unchecked"],
 }
 
 
@@ -223,15 +284,16 @@ async def create_saved_lead(
         )
     ).scalar_one_or_none()
     if existing:
+        existing_id = existing.id
+        q, _ = _saved_leads_base_query(user.id)
+        q = q.where(SavedLead.id == existing_id)
+        rows = (await db.execute(q)).all()
+        if rows:
+            return (await _hydrate_saved_lead_items(db, user.id, rows))[0]
         return SavedLeadItem(
-            id=existing.id,
-            user_id=existing.user_id,
-            route_id=existing.route_id,
-            business_id=existing.business_id,
-            status=existing.status,
-            priority=existing.priority,
-            next_follow_up_at=existing.next_follow_up_at,
-            last_contact_attempt_at=existing.last_contact_attempt_at,
+            id=existing.id, user_id=existing.user_id, route_id=existing.route_id,
+            business_id=existing.business_id, status=existing.status, priority=existing.priority,
+            next_follow_up_at=existing.next_follow_up_at, last_contact_attempt_at=existing.last_contact_attempt_at,
         )
 
     item = SavedLead(user_id=user.id, business_id=payload.business_id, route_id=payload.route_id)
@@ -249,15 +311,21 @@ async def create_saved_lead(
             raise
         item = existing
 
-    background_tasks.add_task(enrich_saved_lead, item.business_id, user.id)
+    item_id = item.id
+    item_business_id = item.business_id
+    background_tasks.add_task(enrich_saved_lead, item_business_id, user.id)
+    q, _ = _saved_leads_base_query(user.id)
+    q = q.where(SavedLead.id == item_id)
+    rows = (await db.execute(q)).all()
+    if rows:
+        return (await _hydrate_saved_lead_items(db, user.id, rows))[0]
     return SavedLeadItem(
-        id=item.id, user_id=item.user_id, route_id=item.route_id,
-        business_id=item.business_id, status=item.status, priority=item.priority,
-        next_follow_up_at=item.next_follow_up_at, last_contact_attempt_at=item.last_contact_attempt_at,
+        id=item_id, user_id=user.id, route_id=payload.route_id,
+        business_id=item_business_id, status="saved", priority=0,
     )
 
 
-@router.get("", response_model=list[SavedLeadItem])
+@router.get("", response_model=None)
 async def list_saved_leads(
     status: str | None = Query(default=None),
     due_before: datetime | None = Query(default=None),
@@ -268,6 +336,8 @@ async def list_saved_leads(
     sort_dir: str = Query(default="asc", pattern="^(asc|desc)$"),
     blue_collar: bool | None = None,
     has_owner_name: bool | None = None,
+    has_employee_count: bool | None = None,
+    employee_count_band: str | None = None,
     operating_status: str | None = None,
     score_band: str | None = Query(default=None, pattern="^(high|medium|low)$"),
     has_notes: bool | None = None,
@@ -278,12 +348,12 @@ async def list_saved_leads(
     group_by: str | None = None,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-) -> list[SavedLeadItem]:
+) -> list[SavedLeadItem] | list[dict]:
     sort_by = sort_by if isinstance(sort_by, str) else "follow_up_date"
     if sort_by not in VALID_SAVED_SORT_BY:
         raise HTTPException(status_code=422, detail=f"Invalid sort_by '{sort_by}'. Must be one of: {sorted(VALID_SAVED_SORT_BY)}")
 
-    q = _saved_leads_base_query(user.id)
+    q, val_subq = _saved_leads_base_query(user.id)
 
     if status:
         q = q.where(SavedLead.status == status)
@@ -293,6 +363,10 @@ async def list_saved_leads(
         q = q.where(Business.is_blue_collar.is_(blue_collar))
     if has_owner_name is not None:
         q = q.where(Business.owner_name.is_not(None) if has_owner_name else Business.owner_name.is_(None))
+    if has_employee_count is not None:
+        q = q.where(Business.employee_count_estimate.is_not(None) if has_employee_count else Business.employee_count_estimate.is_(None))
+    if employee_count_band:
+        q = q.where(Business.employee_count_band == employee_count_band)
     if operating_status:
         q = q.where(Business.operating_status == operating_status)
     if score_band:
@@ -322,9 +396,24 @@ async def list_saved_leads(
     if untouched_only:
         q = q.where(SavedLead.last_contact_attempt_at.is_(None))
 
-    q = _apply_saved_sort(q, sort_by, sort_dir).limit(limit).offset(offset)
+    q = _apply_saved_sort(q, sort_by, sort_dir, val_subq).limit(limit).offset(offset)
     rows = (await db.execute(q)).all()
-    return await _hydrate_saved_lead_items(db, user.id, rows)
+    items = await _hydrate_saved_lead_items(db, user.id, rows)
+
+    if group_by and group_by in GROUP_BY_SAVED_CONFIGS:
+        from fastapi.responses import JSONResponse
+        groups = _apply_saved_groups(items, group_by)
+        return JSONResponse(content=[
+            {
+                "key": g["key"],
+                "label": g["label"],
+                "count": g["count"],
+                "leads": [lead.model_dump(mode="json") for lead in g["leads"]],
+            }
+            for g in groups
+        ])
+
+    return items
 
 
 @router.get("/today", response_model=SavedLeadsTodayResponse)
@@ -336,7 +425,7 @@ async def get_saved_leads_today(
     start_of_today = now.replace(hour=0, minute=0, second=0, microsecond=0)
     start_of_tomorrow = start_of_today + timedelta(days=1)
 
-    base = _saved_leads_base_query(user.id)
+    base, _ = _saved_leads_base_query(user.id)
     unresolved = SavedLead.status.notin_(["visited", "not_interested"])
 
     overdue_rows = (await db.execute(
@@ -426,21 +515,53 @@ async def update_saved_lead(
     if "last_contact_attempt_at" in payload.model_fields_set:
         item.last_contact_attempt_at = payload.last_contact_attempt_at
 
-    # Phase 10: manual owner_name entry — source = manual, confidence = 1.0, never overwritten
-    if "owner_name" in payload.model_fields_set and payload.owner_name is not None:
+    business = None
+    if {"owner_name", "employee_count_estimate", "employee_count_band"} & payload.model_fields_set:
         business = await db.get(Business, item.business_id)
-        if business:
-            from app.services.enrichment_service import _write_owner_name
-            # Force manual write by temporarily clearing source so it wins
+
+    if business and "owner_name" in payload.model_fields_set:
+        if payload.owner_name is None:
+            business.owner_name = None
             business.owner_name_source = None
-            _write_owner_name(business, payload.owner_name, source="manual", confidence=1.0)
+            business.owner_name_confidence = None
+            business.owner_name_last_checked_at = None
+        else:
+            await promote_owner_name(
+                db,
+                business,
+                owner_name=payload.owner_name,
+                source="manual",
+                confidence=1.0,
+                evidence_json={"path": "PATCH /saved-leads/{id}"},
+            )
+
+    if business and ("employee_count_estimate" in payload.model_fields_set or "employee_count_band" in payload.model_fields_set):
+        estimate = payload.employee_count_estimate if "employee_count_estimate" in payload.model_fields_set else business.employee_count_estimate
+        band = payload.employee_count_band if "employee_count_band" in payload.model_fields_set else business.employee_count_band
+        if "employee_count_estimate" in payload.model_fields_set and "employee_count_band" in payload.model_fields_set and estimate is None and band is None:
+            business.employee_count_estimate = None
+            business.employee_count_band = None
+            business.employee_count_source = None
+            business.employee_count_confidence = None
+            business.employee_count_last_checked_at = None
+        else:
+            await promote_employee_count(
+                db,
+                business,
+                estimate=estimate,
+                band=band or employee_count_band_from_estimate(estimate),
+                source="manual",
+                confidence=1.0,
+                evidence_json={"path": "PATCH /saved-leads/{id}"},
+            )
 
     await db.commit()
-    return SavedLeadItem(
-        id=item.id, user_id=item.user_id, route_id=item.route_id,
-        business_id=item.business_id, status=item.status, priority=item.priority,
-        next_follow_up_at=item.next_follow_up_at, last_contact_attempt_at=item.last_contact_attempt_at,
-    )
+    q, _ = _saved_leads_base_query(user.id)
+    q = q.where(SavedLead.id == saved_lead_id)
+    rows = (await db.execute(q)).all()
+    if rows:
+        return (await _hydrate_saved_lead_items(db, user.id, rows))[0]
+    raise HTTPException(status_code=404, detail="Saved lead not found after update")
 
 
 @router.delete("/{saved_lead_id}")
