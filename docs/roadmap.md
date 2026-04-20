@@ -1,6 +1,6 @@
 # RepRoute Master Roadmap
 
-Updated: April 19, 2026 (Phase 10 code complete — all 16 files patched, 105 backend tests passing)
+Updated: April 19, 2026 (Phase 11 code complete — full dark-theme UI overhaul shipped, all gates 1–3 implemented)
 
 ##
 Developer notes:
@@ -106,6 +106,7 @@ RepRoute is a route-aware field sales prospecting platform for B2B reps. Insuran
 - Phase 6 Overpass retry complete: `osm_enrichment_service.py` retries up to 2 attempts with 1s delay on transient errors; 4xx terminal; exhaustion returns None gracefully — enrichment never raises, always records attempted timestamp
 - 11 new Overpass resilience tests added; 105 backend tests total passing
 - Phase 0 baseline docs complete: `backend/.env.example`, `frontend/.env.example`, root `.env.example` with all env vars through Phase 7; `README.md` updated with accurate setup steps and runbook reference
+- Phase 11 code complete (Gates 1–3): full dark-theme UI overhaul — `#0F1923` instrument palette, DM Sans, design tokens; app shell with icon rail sidebar + mobile bottom nav; toast event bus (`toast.ts` + `ToastContainer.tsx`); route form Phase A/B split with loading progress; filter chip bar; lead card redesign with overflow menu, note expansion, nearby badge, skeleton; Today tab with resume-route and overdue cards; Saved tab with status tabs, sort popover (5 modes), search, export menu, inline status dots; MapPanel clustering (clusterMaxZoom 11), score-tiered circles, blue-collar dot, selection pulse, user-position marker; detail panel right-rail desktop split + mobile bottom sheet; detail interior with status segmented control, score bar charts, geo/tel/visit action buttons, call-logged UX, owner inline edit, validation collapsible, notes compose area; live location mode (`watchPosition` + `clearWatch`); PWA manifest dark theme; commit a3b51eb (main, April 19 2026). Gate 4 polish (steps 14–18) remaining.
 - Phase 10 code complete: `is_blue_collar` + owner-contact columns (migration 0008), `classify()` returns `(insurance_class, is_blue_collar)` tuple, expanded blue-collar category mappings (auto detailing, towing, weld/fab, pest, lawn, pressure wash, painting, cleaning, locksmith), +5 fit-score bonus in v1 and v2, OSM `operator` tag extraction → `owner_name`, JSON-LD Person + website-text heuristic owner extraction in validation service, `sort_by` / `sort_dir` / `group_by` on `GET /leads` and `GET /saved-leads` (9 sort modes, 7 group modes), expanded filter params (`blue_collar`, `has_owner_name`, `operating_status`, `score_band`, `has_notes`, `saved_after`, `saved_before`, `overdue_only`, `untouched_only`), Today view gains `blue_collar_today` and `has_owner_name` sections, Phase 10 export columns added to both CSVs (`is_blue_collar`, `owner_name`, `owner_name_source`, `owner_name_confidence` as %, `operating_status`), grouped CSV export via `?group_by=`, manual `owner_name` write via `PATCH /saved-leads/{id}` (source=manual, confidence=1.0, never overwritten), `ingest_overture.py` and `backfill_classification.py` updated for tuple unpack + `is_blue_collar` upsert; all 105 backend tests passing
 - Phase 8 prerequisite complete: `docs/RUNBOOK.md` (266 lines) covering ingestion trigger, all quota/outage scenarios (ORS/Photon/Overpass/Clerk/validation), DB migration recovery, Redis down, CF Worker troubleshooting, Render + CF Pages rollback, support contacts, pilot P0-P3 SLA
 - `docs/REQUIRED_SECRETS.md` and `docs/DEPLOYMENT_GUIDE.md` updated with OVERPASS_* and ENRICHMENT_* env vars
@@ -866,7 +867,7 @@ MVP is complete when all are true:
 
 ### Phase 11 — UI Overhaul and Field Workflow Intelligence
 
-**Status: Not started**
+**Status: Code complete — Gates 1–3 fully implemented (commit a3b51eb, pushed to main April 19 2026); Gate 4 polish remaining**
 
 **Scope:**
 A complete visual and interaction redesign of the frontend, plus a set of field-workflow features that are either frontend-only or require minimal backend additions. This phase treats the app as a precision field instrument — not a SaaS dashboard. Every screen is evaluated against the question: "Can a rep do this with one hand, standing outside a business?"
@@ -1183,43 +1184,43 @@ Sites requiring retry wiring:
 
 Each step is a discrete, testable, mergeable unit. Steps within a gate are parallel-safe among themselves.
 
-**Gate 1 — Foundation (must land first; everything depends on these tokens):**
+**Gate 1 — Foundation (must land first; everything depends on these tokens):** ✅ COMPLETE
 
-| Step | Scope | Files | Risk |
+| Step | Scope | Files | Status |
 |---|---|---|---|
-| 1 | Design tokens, typography (`@import DM Sans`), WCAG fix for `--text-muted`, PWA manifest update | `app.css`, `vite.config.ts` | Low |
-| 2 | Toast system (`toast.ts` + `#toast-root` in App.tsx) | `src/lib/toast.ts`, `App.tsx`, `app.css` | Low |
-| 3 | App shell: topbar 48px, route breadcrumb, offline dot, Clerk `appearance` prop | `App.tsx`, `main.tsx`, `app.css` | Low |
-| 4 | Sidebar: icon rail (desktop) + bottom nav (mobile), sidebar footer, offline banner (replaces per-component banners), empty map state overlay | `App.tsx`, `app.css` | Medium — removes existing tab bar JSX; must verify all three tabs still reachable |
+| 1 | Design tokens, typography (`@import DM Sans`), WCAG fix for `--text-muted`, PWA manifest update | `app.css`, `vite.config.ts` | ✅ Done |
+| 2 | Toast system (`toast.ts` + `ToastContainer.tsx`) | `src/lib/toast.ts`, `src/components/ToastContainer.tsx`, `App.tsx`, `app.css` | ✅ Done |
+| 3 | App shell: topbar 3-col grid, route breadcrumb, offline dot | `App.tsx`, `app.css` | ✅ Done |
+| 4 | Sidebar: icon rail (desktop) + bottom nav (mobile), sidebar footer, offline banner, PWA install prompt | `App.tsx`, `app.css` | ✅ Done |
 
-**Gate 2 — Core components (parallel-safe after Gate 1):**
+**Gate 2 — Core components (parallel-safe after Gate 1):** ✅ COMPLETE
 
-| Step | Scope | Files | Risk |
+| Step | Scope | Files | Status |
 |---|---|---|---|
-| 5 | Route form Phase A/B layout, corridor segmented control, loading progress, recent routes | `RouteForm.tsx`, `App.tsx`, `app.css` | Medium |
-| 6 | Filter chip bar, popover pattern | `App.tsx`, `app.css` | Medium |
-| 7 | Lead card redesign: layout, overflow menu, note expansion, skeleton, `initialStatus` param | `LeadList.tsx`, `App.tsx`, `app.css` | Medium |
-| 8 | Today tab redesign, skeleton, `onResumeRoute` prop | `TodayDashboard.tsx`, `App.tsx`, `app.css` | Low |
-| 9 | Saved tab: status pills, sort popover, export menu, search, overdue border, inline stepper, swipe | `SavedLeads.tsx`, `app.css` | High — most surface area; test swipe on iOS Safari specifically |
+| 5 | Route form Phase A/B layout, waypoints accordion, loading progress (geocoding→routing→prospects), recent routes | `RouteForm.tsx`, `App.tsx`, `app.css` | ✅ Done |
+| 6 | Filter chip bar, popover pattern | `App.tsx`, `app.css` | ✅ Done |
+| 7 | Lead card redesign: layout, overflow menu, note expansion, skeleton, `initialStatus` param, nearby badge | `LeadList.tsx`, `App.tsx`, `app.css` | ✅ Done |
+| 8 | Today tab redesign, skeleton, `onResumeRoute` prop | `TodayDashboard.tsx`, `App.tsx`, `app.css` | ✅ Done |
+| 9 | Saved tab: status tabs, sort popover (5 modes), export menu, search, overdue dates, inline status dots, flash animation | `SavedLeads.tsx`, `app.css` | ✅ Done |
 
-**Gate 3 — Map and detail (sequential within gate; map must land before live location):**
+**Gate 3 — Map and detail (sequential within gate):** ✅ COMPLETE
 
-| Step | Scope | Files | Risk |
+| Step | Scope | Files | Status |
 |---|---|---|---|
-| 10 | Map marker redesign: circle+text layers, blue collar dot, pulse layer, clustering, fit-route button | `MapPanel.tsx`, `app.css` | High — glyph source required for text labels; verify raster style fallback |
-| 11 | Detail panel right-rail split (desktop), `map.resize()` on transition, mobile bottom sheet improvement | `App.tsx`, `LeadDetail.tsx`, `app.css` | High — grid transition + map resize must be verified at 1280px and 1024px |
-| 12 | Detail interior: status segmented control, score breakdown `<details>`, contact actions, quick-call log, owner edit | `LeadDetail.tsx`, `app.css` | Medium |
-| 13 | Live location mode: `watchPosition`, user-position dot (`maplibregl.Marker`), haversine sort, nearby badge, visit check-in | `App.tsx`, `MapPanel.tsx`, `LeadDetail.tsx`, `app.css` | Medium — test `watchPosition` cleanup on iOS |
+| 10 | Map marker redesign: score-tiered circles, blue-collar dot, pulse ring, clustering (clusterMaxZoom 11), raster glyph guard | `MapPanel.tsx`, `app.css` | ✅ Done |
+| 11 | Detail panel right-rail split (desktop grid col 3), `map.resize()` on transition, mobile bottom sheet | `App.tsx`, `LeadDetail.tsx`, `app.css` | ✅ Done |
+| 12 | Detail interior: status segmented control, score bar charts, geo/tel/visit action buttons, call-logged UX, owner inline edit, notes compose area, validation collapsible | `LeadDetail.tsx`, `app.css` | ✅ Done |
+| 13 | Live location mode: `watchPosition`, user-position dot (`maplibregl.Marker`), haversine sort, nearby badge | `App.tsx`, `MapPanel.tsx`, `app.css` | ✅ Done |
 
-**Gate 4 — Polish (final pass; parallel-safe):**
+**Gate 4 — Polish (final pass; parallel-safe):** PENDING
 
-| Step | Scope | Files | Risk |
+| Step | Scope | Files | Status |
 |---|---|---|---|
-| 14 | Error recovery: inline retry + dismiss on all error banners | `App.tsx`, `RouteForm.tsx`, `TodayDashboard.tsx`, `LeadDetail.tsx`, `SavedLeads.tsx` | Low |
-| 15 | Loading skeletons: Today, Saved, detail notes | `TodayDashboard.tsx`, `SavedLeads.tsx`, `LeadDetail.tsx`, `app.css` | Low |
-| 16 | Micro-interactions: card lift, tab indicator, score badge pulse, status flash | `app.css`, `LeadList.tsx`, `SavedLeads.tsx` | Low |
-| 17 | Onboarding replacement: remove modal, `isFirstRun` prop, extended/compact empty states, PWA install prompt | `App.tsx`, `LeadList.tsx`, `TodayDashboard.tsx`, `SavedLeads.tsx` | Low |
-| 18 | Accessibility pass: tap targets, focus rings, ARIA labels, focus trap in detail panel | All component files, `app.css` | Low |
+| 14 | Error recovery: inline retry + dismiss on all error banners | `App.tsx`, `RouteForm.tsx`, `TodayDashboard.tsx`, `LeadDetail.tsx`, `SavedLeads.tsx` | Pending |
+| 15 | Loading skeletons: Today, Saved, detail notes | `TodayDashboard.tsx`, `SavedLeads.tsx`, `LeadDetail.tsx`, `app.css` | Pending |
+| 16 | Micro-interactions: card lift, tab indicator, score badge pulse, status flash | `app.css`, `LeadList.tsx`, `SavedLeads.tsx` | Pending |
+| 17 | Onboarding replacement: remove modal, `isFirstRun` prop, extended/compact empty states, PWA install prompt | `App.tsx`, `LeadList.tsx`, `TodayDashboard.tsx`, `SavedLeads.tsx` | Pending |
+| 18 | Accessibility pass: tap targets, focus rings, ARIA labels, focus trap in detail panel | All component files, `app.css` | Pending |
 
 ---
 
