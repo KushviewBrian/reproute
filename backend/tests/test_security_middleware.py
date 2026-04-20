@@ -14,6 +14,10 @@ def test_security_headers_are_present() -> None:
     assert response.headers.get("referrer-policy") == "strict-origin-when-cross-origin"
 
 
+def test_gzip_middleware_is_registered() -> None:
+    assert any(middleware.cls.__name__ == "GZipMiddleware" for middleware in app.user_middleware)
+
+
 def test_hsts_header_in_production_mode() -> None:
     settings = get_settings()
     original_environment = settings.environment

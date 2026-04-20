@@ -1,7 +1,7 @@
 import { SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/clerk-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { createNote, fetchLeads, getValidationState, patchRoute, saveLead, type Lead, type ValidationStateResponse } from "../api/client";
+import { createNote, fetchLeads, getValidationStatesBatch, patchRoute, saveLead, type Lead, type ValidationStateResponse } from "../api/client";
 import { LeadDetail, leadToDetail, savedLeadToDetail, type DetailLead } from "../components/LeadDetail";
 import { LeadList } from "../components/LeadList";
 import { MapPanel } from "../components/MapPanel";
@@ -297,17 +297,14 @@ export function App({ token, refreshToken }: AppProps) {
           hasV2 ? null : "Using v1 fallback for this route. Recreate route to populate v2 scores.",
         );
         if (token) {
-          Promise.allSettled(
-            sorted.map((l) =>
-              getValidationState(l.business_id, token).then((vs) => ({ id: l.business_id, vs })),
-            ),
-          ).then((results) => {
-            const map: Record<string, ValidationStateResponse> = {};
-            for (const r of results) {
-              if (r.status === "fulfilled") map[r.value.id] = r.value.vs;
-            }
-            setValidationStates(map);
-          });
+          const businessIds = Array.from(new Set(sorted.map((l) => l.business_id)));
+          if (!businessIds.length) {
+            setValidationStates({});
+          } else {
+            getValidationStatesBatch(businessIds, token)
+              .then((map) => setValidationStates(map))
+              .catch(() => {});
+          }
         }
       } catch (err) {
         const cached = readCachedRouteLeads(id);

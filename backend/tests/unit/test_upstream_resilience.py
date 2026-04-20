@@ -255,17 +255,22 @@ async def test_cache_hit_skips_ors():
 @pytest.mark.asyncio
 async def test_geocode_success():
     with patch("app.services.geocode_service.get_settings") as mock_settings, \
+         patch("app.services.geocode_service.redis_client") as mock_redis, \
+         patch("app.services.geocode_service.get_geocode_client", return_value=MagicMock()), \
          patch("app.services.geocode_service._fetch_geocode", new_callable=AsyncMock) as mock_fetch:
         s = MagicMock()
         s.geocode_worker_url = "https://photon.komoot.io/api/"
         s.geocode_timeout_seconds = 4
         mock_settings.return_value = s
+        mock_redis.get = AsyncMock(return_value=None)
+        mock_redis.set = AsyncMock()
         mock_fetch.return_value = _photon_success_response()
 
         results, degraded = await geocode(query="Indianapolis")
         assert len(results) == 1
         assert results[0].label == "Indianapolis, Indiana"
         assert degraded is False
+        mock_redis.set.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
@@ -275,17 +280,40 @@ async def test_geocode_success():
 @pytest.mark.asyncio
 async def test_geocode_fallback_on_failure():
     with patch("app.services.geocode_service.get_settings") as mock_settings, \
+         patch("app.services.geocode_service.redis_client") as mock_redis, \
+         patch("app.services.geocode_service.get_geocode_client", return_value=MagicMock()), \
          patch("app.services.geocode_service._fetch_geocode", new_callable=AsyncMock) as mock_fetch:
         s = MagicMock()
         s.geocode_worker_url = "https://photon.komoot.io/api/"
         s.geocode_timeout_seconds = 4
         mock_settings.return_value = s
+        mock_redis.get = AsyncMock(return_value=None)
+        mock_redis.set = AsyncMock()
         mock_fetch.side_effect = _make_timeout_exc()
 
         results, degraded = await geocode(query="Indianapolis")
         assert len(results) == 1
         assert degraded is True
         assert results[0].lat == pytest.approx(39.7683331, abs=1e-4)
+        mock_redis.set.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_geocode_cache_hit_skips_upstream_fetch():
+    cached_payload = _photon_success_response()
+    with patch("app.services.geocode_service.get_settings") as mock_settings, \
+         patch("app.services.geocode_service.redis_client") as mock_redis, \
+         patch("app.services.geocode_service._fetch_geocode", new_callable=AsyncMock) as mock_fetch:
+        s = MagicMock()
+        s.geocode_worker_url = "https://photon.komoot.io/api/"
+        s.geocode_timeout_seconds = 4
+        mock_settings.return_value = s
+        mock_redis.get = AsyncMock(return_value=json.dumps(cached_payload))
+
+        results, degraded = await geocode(query="Indianapolis")
+        assert len(results) == 1
+        assert degraded is False
+        mock_fetch.assert_not_called()
 
 
 @pytest.mark.asyncio

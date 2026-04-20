@@ -6,10 +6,12 @@ from datetime import date
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.middleware.gzip import GZipMiddleware
 
 from app.api.router import api_router
 from app.core.config import get_settings
 from app.db.session import is_db_tls_config_secure
+from app.utils.http_clients import close_http_clients, init_http_clients
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -58,7 +60,11 @@ def _validate_startup_config() -> None:
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     _validate_startup_config()
-    yield
+    await init_http_clients()
+    try:
+        yield
+    finally:
+        await close_http_clients()
 
 
 app = FastAPI(title="Reproute API", version="0.1.0", lifespan=lifespan)
@@ -81,6 +87,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(GZipMiddleware, minimum_size=500)
 
 
 def _should_emit_audit_log(method: str, path: str, status_code: int) -> bool:

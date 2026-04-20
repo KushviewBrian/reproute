@@ -8,6 +8,7 @@ from dataclasses import dataclass
 import httpx
 
 from app.core.config import get_settings
+from app.utils.http_clients import get_overpass_client
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +84,12 @@ def _is_transient_overpass_error(exc: BaseException) -> bool:
     return False
 
 
-async def _call_overpass_with_retry(endpoint: str, query: str, timeout: int) -> dict | None:
+async def _call_overpass_with_retry(
+    endpoint: str,
+    query: str,
+    timeout: int,
+    client: httpx.AsyncClient | None = None,
+) -> dict | None:
     """
     POST to Overpass with up to _OVERPASS_MAX_ATTEMPTS attempts.
 
@@ -94,14 +100,22 @@ async def _call_overpass_with_retry(endpoint: str, query: str, timeout: int) -> 
     """
     for attempt in range(1, _OVERPASS_MAX_ATTEMPTS + 1):
         try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                resp = await client.post(
-                    endpoint,
-                    content=query,
-                    headers={"Content-Type": "application/x-www-form-urlencoded"},
-                )
-                resp.raise_for_status()
-                return resp.json()
+            if client is None:
+                async with httpx.AsyncClient(timeout=timeout) as ephemeral_client:
+                    resp = await ephemeral_client.post(
+                        endpoint,
+                        content=query,
+                        headers={"Content-Type": "application/x-www-form-urlencoded"},
+                    )
+                    resp.raise_for_status()
+                    return resp.json()
+            resp = await client.post(
+                endpoint,
+                content=query,
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            )
+            resp.raise_for_status()
+            return resp.json()
         except BaseException as exc:
             if not _is_transient_overpass_error(exc):
                 logger.warning(
@@ -139,6 +153,7 @@ async def fetch_osm_enrichment(lat: float, lng: float, name: str) -> OsmEnrichme
         endpoint=settings.overpass_endpoint,
         query=query,
         timeout=settings.overpass_timeout_seconds,
+        client=get_overpass_client(),
     )
 
     if data is None:

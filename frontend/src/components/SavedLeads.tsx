@@ -5,7 +5,6 @@ import {
   downloadRouteCsv,
   downloadSavedLeadsCsv,
   downloadSavedLeadsCsvGrouped,
-  listNotes,
   listSavedLeads,
   type SavedLead,
   updateSavedLead,
@@ -141,19 +140,7 @@ export function SavedLeads({ token, currentRouteId, onAddToRoute, onCountChange,
       try {
         const base = await listSavedLeads(token, statusFilter || undefined);
         if (cancelled) return;
-        const hydrated = token
-          ? await Promise.all(
-              base.map(async (item) => {
-                if (item.latest_note_text) return item;
-                try {
-                  const notes = await listNotes(item.business_id, token);
-                  return notes.length ? { ...item, latest_note_text: notes[0].note_text, latest_note_created_at: notes[0].created_at } : item;
-                } catch { return item; }
-              }),
-            )
-          : base;
-        if (cancelled) return;
-        const sorted = sortSavedLeads(hydrated, sortMode);
+        const sorted = sortSavedLeads(base, sortMode);
         cacheSavedLeads(statusFilter, sorted);
         setItems(sorted);
         setCacheMeta(null);

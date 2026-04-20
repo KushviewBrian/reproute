@@ -9,6 +9,7 @@ import math
 import httpx
 
 from app.core.config import get_settings
+from app.utils.http_clients import get_ors_client
 from app.utils.redis_client import redis_client
 
 logger = logging.getLogger(__name__)
@@ -68,7 +69,12 @@ def _is_transient_ors_error(exc: BaseException) -> bool:
     return False
 
 
-async def _call_ors_with_retry(url: str, headers: dict, payload: dict) -> dict:
+async def _call_ors_with_retry(
+    url: str,
+    headers: dict,
+    payload: dict,
+    client: httpx.AsyncClient | None = None,
+) -> dict:
     """
     POST to ORS with up to _ORS_MAX_ATTEMPTS attempts.
 
@@ -80,10 +86,14 @@ async def _call_ors_with_retry(url: str, headers: dict, payload: dict) -> dict:
     last_exc: BaseException | None = None
     for attempt in range(1, _ORS_MAX_ATTEMPTS + 1):
         try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                resp = await client.post(url, headers=headers, json=payload)
-                resp.raise_for_status()
-                return resp.json()
+            if client is None:
+                async with httpx.AsyncClient(timeout=10) as ephemeral_client:
+                    resp = await ephemeral_client.post(url, headers=headers, json=payload)
+                    resp.raise_for_status()
+                    return resp.json()
+            resp = await client.post(url, headers=headers, json=payload)
+            resp.raise_for_status()
+            return resp.json()
         except BaseException as exc:
             last_exc = exc
             if not _is_transient_ors_error(exc):
@@ -191,7 +201,7 @@ async def get_route_multi(waypoints: list[tuple[float, float]]) -> dict:
     payload = {"coordinates": coordinates}
 
     try:
-        data = await _call_ors_with_retry(url, headers, payload)
+        data = await _call_ors_with_retry(url, headers, payload, client=get_ors_client())
         await redis_client.set(key, json.dumps(data), ex=settings.route_cache_ttl_seconds)
         return data
     except BaseException as exc:

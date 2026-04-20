@@ -311,6 +311,17 @@ export async function getValidationState(businessId: string, token?: string): Pr
   return req<ValidationStateResponse>(`/leads/${encodeURIComponent(businessId)}/validation`, {}, token);
 }
 
+export async function getValidationStatesBatch(
+  businessIds: string[],
+  token?: string,
+): Promise<Record<string, ValidationStateResponse>> {
+  return req<Record<string, ValidationStateResponse>>(
+    "/leads/validation/batch",
+    { method: "POST", body: JSON.stringify({ business_ids: businessIds }) },
+    token,
+  );
+}
+
 export async function triggerValidation(businessId: string, token?: string): Promise<{ run_id: string; status: string }> {
   return req<{ run_id: string; status: string }>(
     `/leads/${encodeURIComponent(businessId)}/validate`,

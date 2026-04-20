@@ -12,6 +12,7 @@ from app.models.user import User
 from app.schemas.validation import (
     AdminPruneResponse,
     AdminRunDueResponse,
+    BatchValidationRequest,
     PinFieldRequest,
     PinFieldResponse,
     TriggerValidationRequest,
@@ -35,6 +36,60 @@ from app.utils.rate_limit import enforce_rate_limit
 
 lead_router = APIRouter()
 admin_router = APIRouter()
+
+
+def _build_validation_state_response(run, fields, conf, label) -> ValidationStateResponse:
+    return ValidationStateResponse(
+        run=ValidationRunState(
+            run_id=run.id,
+            business_id=run.business_id,
+            status=run.status,
+            requested_checks=run.requested_checks,
+            started_at=run.started_at,
+            finished_at=run.finished_at,
+            error_message=run.error_message,
+        ) if run else None,
+        fields=[
+            ValidationFieldState(
+                field_name=f.field_name,
+                state=f.state,
+                confidence=float(f.confidence) if f.confidence is not None else None,
+                failure_class=f.failure_class,
+                value_current=f.value_current,
+                value_normalized=f.value_normalized,
+                evidence_json=f.evidence_json,
+                last_checked_at=f.last_checked_at,
+                next_check_at=f.next_check_at,
+                pinned_by_user=bool(f.pinned_by_user),
+            )
+            for f in fields
+        ],
+        overall_confidence=conf,
+        overall_label=label,
+    )
+
+
+@lead_router.post("/validation/batch", response_model=dict[str, ValidationStateResponse])
+async def batch_validation_state(
+    payload: BatchValidationRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, ValidationStateResponse]:
+    await enforce_rate_limit(f"rl:validation_batch:{user.id}", limit=60, window_seconds=60)
+    if not payload.business_ids:
+        return {}
+
+    results: dict[str, ValidationStateResponse] = {}
+    seen: set[UUID] = set()
+    for business_id in payload.business_ids:
+        if business_id in seen:
+            continue
+        seen.add(business_id)
+        if not await user_can_access_business(db, user.id, business_id):
+            continue
+        run, fields, conf, label = await get_validation_state(db, business_id)
+        results[str(business_id)] = _build_validation_state_response(run, fields, conf, label)
+    return results
 
 
 @lead_router.post("/{business_id}/validate", response_model=TriggerValidationResponse)
@@ -79,34 +134,7 @@ async def read_validation_state(
     if not await user_can_access_business(db, user.id, business_id):
         raise HTTPException(status_code=404, detail="Business not found")
     run, fields, conf, label = await get_validation_state(db, business_id)
-    return ValidationStateResponse(
-        run=ValidationRunState(
-            run_id=run.id,
-            business_id=run.business_id,
-            status=run.status,
-            requested_checks=run.requested_checks,
-            started_at=run.started_at,
-            finished_at=run.finished_at,
-            error_message=run.error_message,
-        ) if run else None,
-        fields=[
-            ValidationFieldState(
-                field_name=f.field_name,
-                state=f.state,
-                confidence=float(f.confidence) if f.confidence is not None else None,
-                failure_class=f.failure_class,
-                value_current=f.value_current,
-                value_normalized=f.value_normalized,
-                evidence_json=f.evidence_json,
-                last_checked_at=f.last_checked_at,
-                next_check_at=f.next_check_at,
-                pinned_by_user=bool(f.pinned_by_user),
-            )
-            for f in fields
-        ],
-        overall_confidence=conf,
-        overall_label=label,
-    )
+    return _build_validation_state_response(run, fields, conf, label)
 
 
 @admin_router.post("/run-due", response_model=AdminRunDueResponse)

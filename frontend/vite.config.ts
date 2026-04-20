@@ -21,8 +21,26 @@ export default defineConfig({
         ]
       },
       workbox: {
-        globPatterns: ["**/*.{js,css,html,svg,png}"]
-      }
+        globPatterns: ["**/*.{js,css,html,svg,png}"],
+        runtimeCaching: [
+          {
+            urlPattern: /^https:\/\/tile\.openstreetmap\.org\/.*/i,
+            handler: "CacheFirst",
+            options: {
+              cacheName: "map-tiles",
+              expiration: { maxEntries: 500, maxAgeSeconds: 7 * 24 * 60 * 60 },
+            },
+          },
+          {
+            urlPattern: /\/geocode\?/,
+            handler: "StaleWhileRevalidate",
+            options: {
+              cacheName: "geocode-api",
+              expiration: { maxEntries: 50, maxAgeSeconds: 60 * 60 },
+            },
+          },
+        ],
+      },
     })
   ]
 });

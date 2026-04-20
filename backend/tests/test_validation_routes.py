@@ -8,7 +8,7 @@ from fastapi import HTTPException
 
 from app.api.routes import validation as validation_routes
 from app.models.user import User
-from app.schemas.validation import PinFieldRequest, TriggerValidationRequest
+from app.schemas.validation import BatchValidationRequest, PinFieldRequest, TriggerValidationRequest
 
 
 async def _noop_async(*_args, **_kwargs):
@@ -164,6 +164,41 @@ async def test_read_validation_state_success_includes_overall_label(monkeypatch)
     assert resp.overall_label == "Mostly valid"
     assert resp.run is not None
     assert len(resp.fields) == 1
+
+
+@pytest.mark.asyncio
+async def test_batch_validation_state_empty_payload_returns_empty(monkeypatch) -> None:
+    monkeypatch.setattr(validation_routes, "enforce_rate_limit", _noop_async)
+    user = User(id=uuid.uuid4(), email="owner@example.com")
+    resp = await validation_routes.batch_validation_state(
+        payload=BatchValidationRequest(business_ids=[]),
+        user=user,
+        db=SimpleNamespace(),
+    )
+    assert resp == {}
+
+
+@pytest.mark.asyncio
+async def test_batch_validation_state_returns_only_accessible_businesses(monkeypatch) -> None:
+    monkeypatch.setattr(validation_routes, "enforce_rate_limit", _noop_async)
+    monkeypatch.setattr(validation_routes, "get_validation_state", _get_state_stub)
+
+    allowed = uuid.uuid4()
+    denied = uuid.uuid4()
+
+    async def _access(_db, _user_id, business_id):
+        return business_id == allowed
+
+    monkeypatch.setattr(validation_routes, "user_can_access_business", _access)
+
+    user = User(id=uuid.uuid4(), email="owner@example.com")
+    resp = await validation_routes.batch_validation_state(
+        payload=BatchValidationRequest(business_ids=[allowed, denied]),
+        user=user,
+        db=SimpleNamespace(),
+    )
+    assert str(allowed) in resp
+    assert str(denied) not in resp
 
 
 @pytest.mark.asyncio

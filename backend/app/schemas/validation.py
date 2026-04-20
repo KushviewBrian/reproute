@@ -10,6 +10,10 @@ class TriggerValidationRequest(BaseModel):
     requested_checks: list[str] = Field(default_factory=lambda: ["website", "phone"])
 
 
+class BatchValidationRequest(BaseModel):
+    business_ids: list[UUID] = Field(default_factory=list, max_length=100)
+
+
 class TriggerValidationResponse(BaseModel):
     run_id: UUID
     status: str
