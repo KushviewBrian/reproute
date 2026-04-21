@@ -208,7 +208,12 @@ async def enrich_route_top_leads(route_id: UUID, limit: int = 20) -> None:
         return
 
     for business_id in rows:
+        lock_key = f"osm:enrich:lock:{business_id}"
         try:
+            acquired = await redis_client.set(lock_key, "1", ex=600, nx=True)
+            if not acquired:
+                logger.debug("osm_enrich_route_skip_locked business_id=%s", business_id)
+                continue
             async with SessionLocal() as db:
                 await enrich_business(db, business_id, user_id=None, force=False)
         except PermissionError:

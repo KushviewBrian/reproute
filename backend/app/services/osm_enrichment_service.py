@@ -125,11 +125,10 @@ def _is_transient_overpass_error(exc: BaseException) -> bool:
 async def _call_overpass_with_retry(
     endpoint: str,
     query: str,
-    timeout: int,
-    client: httpx.AsyncClient | None = None,
+    client: httpx.AsyncClient,
 ) -> dict | None:
     """
-    POST to Overpass with up to _OVERPASS_MAX_ATTEMPTS attempts.
+    POST to Overpass with up to _OVERPASS_MAX_ATTEMPTS attempts using the shared pool client.
 
     - Transient errors (timeout, network, 5xx) are retried after _OVERPASS_RETRY_DELAY_SECONDS.
     - 4xx errors are terminal — returns None immediately (enrichment is best-effort).
@@ -138,15 +137,6 @@ async def _call_overpass_with_retry(
     """
     for attempt in range(1, _OVERPASS_MAX_ATTEMPTS + 1):
         try:
-            if client is None:
-                async with httpx.AsyncClient(timeout=timeout) as ephemeral_client:
-                    resp = await ephemeral_client.post(
-                        endpoint,
-                        content=query,
-                        headers={"Content-Type": "application/x-www-form-urlencoded"},
-                    )
-                    resp.raise_for_status()
-                    return resp.json()
             resp = await client.post(
                 endpoint,
                 content=query,
@@ -190,7 +180,6 @@ async def fetch_osm_enrichment(lat: float, lng: float, name: str) -> OsmEnrichme
     data = await _call_overpass_with_retry(
         endpoint=settings.overpass_endpoint,
         query=query,
-        timeout=settings.overpass_timeout_seconds,
         client=get_overpass_client(),
     )
 

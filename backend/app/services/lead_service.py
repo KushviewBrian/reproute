@@ -324,18 +324,19 @@ async def fetch_leads(
         if score_band in band_filters:
             filters.append(band_filters[score_band])
 
-    total = await db.scalar(
-        select(func.count()).select_from(LeadScore).where(LeadScore.route_id == route_id)
-    )
-
-    count_q = (
-        select(func.count())
+    counts_q = (
+        select(
+            func.count().label("total"),
+            func.count().filter(*filters).label("filtered"),
+        )
         .select_from(Business)
         .join(LeadScore, LeadScore.business_id == Business.id)
         .join(RouteCandidate, (RouteCandidate.route_id == LeadScore.route_id) & (RouteCandidate.business_id == LeadScore.business_id))
-        .where(LeadScore.route_id == route_id, *filters)
+        .where(LeadScore.route_id == route_id)
     )
-    filtered = await db.scalar(count_q)
+    counts_row = (await db.execute(counts_q)).one()
+    total = counts_row.total
+    filtered = counts_row.filtered
 
     # Build ORDER BY
     asc_flag = sort_dir.lower() == "asc"

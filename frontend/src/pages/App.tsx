@@ -164,6 +164,8 @@ export function App({ token, refreshToken }: AppProps) {
   const [cacheMeta, setCacheMeta] = useState<string | null>(null);
   const [savedCount, setSavedCount] = useState(0);
   const [validationStates, setValidationStates] = useState<Record<string, ValidationStateResponse>>({});
+  // Cache validation states per route — they change only on explicit validate action, not on filter changes
+  const validationCacheRef = useRef<Map<string, Record<string, ValidationStateResponse>>>(new Map());
 
   // Queue
   const [queueCount, setQueueCount] = useState(0);
@@ -301,9 +303,23 @@ export function App({ token, refreshToken }: AppProps) {
           if (!businessIds.length) {
             setValidationStates({});
           } else {
-            getValidationStatesBatch(businessIds, token)
-              .then((map) => setValidationStates(map))
-              .catch(() => {});
+            const cached = validationCacheRef.current.get(id);
+            const uncachedIds = cached
+              ? businessIds.filter((bid) => !(bid in cached))
+              : businessIds;
+            if (cached && uncachedIds.length === 0) {
+              setValidationStates(cached);
+            } else {
+              getValidationStatesBatch(uncachedIds.length ? uncachedIds : businessIds, token)
+                .then((map) => {
+                  const merged = { ...(cached ?? {}), ...map };
+                  validationCacheRef.current.set(id, merged);
+                  setValidationStates(merged);
+                })
+                .catch(() => {
+                  if (cached) setValidationStates(cached);
+                });
+            }
           }
         }
       } catch (err) {
@@ -318,7 +334,7 @@ export function App({ token, refreshToken }: AppProps) {
         setLeadsLoading(false);
       }
     },
-    [token, minScore, hasPhone, hasWebsite, hasOwnerName, insuranceClass, sortBy, blueCollar, fieldSession, currentPosition],
+    [token, minScore, hasPhone, hasWebsite, hasOwnerName, insuranceClass, sortBy, blueCollar],
   );
 
   async function onCreated(created: {

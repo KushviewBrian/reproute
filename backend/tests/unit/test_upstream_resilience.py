@@ -360,17 +360,14 @@ def test_overpass_4xx_is_not_transient():
 @pytest.mark.asyncio
 async def test_overpass_success_on_first_attempt():
     payload = {"elements": [{"type": "node", "id": 1, "tags": {"phone": "+13175551234", "name": "Test Biz"}}]}
-    with patch("app.services.osm_enrichment_service.httpx.AsyncClient") as mock_client_cls:
-        mock_resp = MagicMock()
-        mock_resp.raise_for_status = MagicMock()
-        mock_resp.json.return_value = payload
-        mock_client = AsyncMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client.post = AsyncMock(return_value=mock_resp)
-        mock_client_cls.return_value = mock_client
+    mock_client = AsyncMock()
+    mock_resp = MagicMock()
+    mock_resp.raise_for_status = MagicMock()
+    mock_resp.json.return_value = payload
+    mock_client.post = AsyncMock(return_value=mock_resp)
 
-        result = await _call_overpass_with_retry("https://overpass-api.de/api/interpreter", "[out:json];", 5)
+    with patch("app.services.osm_enrichment_service.get_overpass_client", return_value=mock_client):
+        result = await _call_overpass_with_retry("https://overpass-api.de/api/interpreter", "[out:json];", mock_client)
         assert result == payload
 
 
@@ -389,30 +386,22 @@ async def test_overpass_retry_then_success():
         mock_resp.json.return_value = payload
         return mock_resp
 
-    with patch("app.services.osm_enrichment_service.asyncio.sleep", new_callable=AsyncMock), \
-         patch("app.services.osm_enrichment_service.httpx.AsyncClient") as mock_client_cls:
-        mock_client = AsyncMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client.post = mock_post
-        mock_client_cls.return_value = mock_client
+    mock_client = AsyncMock()
+    mock_client.post = mock_post
 
-        result = await _call_overpass_with_retry("https://overpass-api.de/api/interpreter", "[out:json];", 5)
+    with patch("app.services.osm_enrichment_service.asyncio.sleep", new_callable=AsyncMock):
+        result = await _call_overpass_with_retry("https://overpass-api.de/api/interpreter", "[out:json];", mock_client)
         assert result == payload
         assert call_count == 2
 
 
 @pytest.mark.asyncio
 async def test_overpass_all_attempts_fail_returns_none():
-    with patch("app.services.osm_enrichment_service.asyncio.sleep", new_callable=AsyncMock), \
-         patch("app.services.osm_enrichment_service.httpx.AsyncClient") as mock_client_cls:
-        mock_client = AsyncMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client.post = AsyncMock(side_effect=httpx.TimeoutException("timed out", request=MagicMock()))
-        mock_client_cls.return_value = mock_client
+    mock_client = AsyncMock()
+    mock_client.post = AsyncMock(side_effect=httpx.TimeoutException("timed out", request=MagicMock()))
 
-        result = await _call_overpass_with_retry("https://overpass-api.de/api/interpreter", "[out:json];", 5)
+    with patch("app.services.osm_enrichment_service.asyncio.sleep", new_callable=AsyncMock):
+        result = await _call_overpass_with_retry("https://overpass-api.de/api/interpreter", "[out:json];", mock_client)
         assert result is None
 
 
@@ -427,16 +416,12 @@ async def test_overpass_4xx_returns_none_no_retry():
         resp.status_code = 400
         raise httpx.HTTPStatusError("400", request=MagicMock(), response=resp)
 
-    with patch("app.services.osm_enrichment_service.httpx.AsyncClient") as mock_client_cls:
-        mock_client = AsyncMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client.post = mock_post
-        mock_client_cls.return_value = mock_client
+    mock_client = AsyncMock()
+    mock_client.post = mock_post
 
-        result = await _call_overpass_with_retry("https://overpass-api.de/api/interpreter", "[out:json];", 5)
-        assert result is None
-        assert call_count == 1  # no retry on 4xx
+    result = await _call_overpass_with_retry("https://overpass-api.de/api/interpreter", "[out:json];", mock_client)
+    assert result is None
+    assert call_count == 1  # no retry on 4xx
 
 
 @pytest.mark.asyncio

@@ -122,8 +122,7 @@ def _to_saved_lead_item(row, notes_by_business: dict) -> SavedLeadItem:
     )
 
 
-async def _hydrate_saved_lead_items(db, user_id, rows) -> list[SavedLeadItem]:
-    business_ids = [r.SavedLead.business_id for r in rows]
+async def _fetch_notes_by_business(db, user_id, business_ids: list) -> dict:
     notes_by_business: dict = {}
     if business_ids:
         note_rows = (
@@ -136,35 +135,46 @@ async def _hydrate_saved_lead_items(db, user_id, rows) -> list[SavedLeadItem]:
         for business_id, note_text, created_at in note_rows:
             if business_id not in notes_by_business:
                 notes_by_business[business_id] = (note_text, created_at)
+    return notes_by_business
+
+
+async def _hydrate_saved_lead_items(db, user_id, rows, notes_by_business: dict | None = None) -> list[SavedLeadItem]:
+    if notes_by_business is None:
+        business_ids = [r.SavedLead.business_id for r in rows]
+        notes_by_business = await _fetch_notes_by_business(db, user_id, business_ids)
     return [_to_saved_lead_item(row, notes_by_business) for row in rows]
 
 
-def _saved_leads_base_query(user_id: UUID):
-    val_subq = _validation_conf_subq()
+def _saved_leads_base_query(user_id: UUID, include_validation: bool = True):
+    base_cols = [
+        SavedLead,
+        Business.name,
+        Business.phone,
+        Business.website,
+        Business.address_line1,
+        Business.city,
+        Business.state,
+        Business.insurance_class,
+        Business.operating_status,
+        Business.is_blue_collar,
+        Business.owner_name,
+        Business.owner_name_source,
+        Business.owner_name_confidence,
+        Business.employee_count_estimate,
+        Business.employee_count_band,
+        Business.employee_count_source,
+        Business.employee_count_confidence,
+        Route.origin_label,
+        Route.destination_label,
+        LeadScore.final_score,
+    ]
+    val_subq = None
+    if include_validation:
+        val_subq = _validation_conf_subq()
+        base_cols.append(val_subq.c.avg_confidence)
+
     q = (
-        select(
-            SavedLead,
-            Business.name,
-            Business.phone,
-            Business.website,
-            Business.address_line1,
-            Business.city,
-            Business.state,
-            Business.insurance_class,
-            Business.operating_status,
-            Business.is_blue_collar,
-            Business.owner_name,
-            Business.owner_name_source,
-            Business.owner_name_confidence,
-            Business.employee_count_estimate,
-            Business.employee_count_band,
-            Business.employee_count_source,
-            Business.employee_count_confidence,
-            Route.origin_label,
-            Route.destination_label,
-            LeadScore.final_score,
-            val_subq.c.avg_confidence,
-        )
+        select(*base_cols)
         .join(Business, Business.id == SavedLead.business_id, isouter=True)
         .join(Route, Route.id == SavedLead.route_id, isouter=True)
         .join(
@@ -172,9 +182,10 @@ def _saved_leads_base_query(user_id: UUID):
             (LeadScore.route_id == SavedLead.route_id) & (LeadScore.business_id == SavedLead.business_id),
             isouter=True,
         )
-        .join(val_subq, val_subq.c.biz_id == SavedLead.business_id, isouter=True)
-        .where(SavedLead.user_id == user_id)
     )
+    if include_validation and val_subq is not None:
+        q = q.join(val_subq, val_subq.c.biz_id == SavedLead.business_id, isouter=True)
+    q = q.where(SavedLead.user_id == user_id)
     return q, val_subq
 
 
@@ -426,7 +437,7 @@ async def get_saved_leads_today(
     start_of_today = now.replace(hour=0, minute=0, second=0, microsecond=0)
     start_of_tomorrow = start_of_today + timedelta(days=1)
 
-    base, _ = _saved_leads_base_query(user.id)
+    base, _ = _saved_leads_base_query(user.id, include_validation=False)
     unresolved = SavedLead.status.notin_(["visited", "not_interested"])
 
     overdue_rows = (await db.execute(
@@ -483,13 +494,18 @@ async def get_saved_leads_today(
             unsaved_lead_count=int(unsaved_count or 0),
         )
 
+    # Fetch notes once for all sections combined, then distribute
+    all_rows = [*overdue_rows, *due_today_rows, *untouched_rows, *blue_collar_today_rows, *has_owner_rows]
+    all_biz_ids = list({r.SavedLead.business_id for r in all_rows})
+    notes_by_business = await _fetch_notes_by_business(db, user.id, all_biz_ids)
+
     return SavedLeadsTodayResponse(
-        overdue=await _hydrate_saved_lead_items(db, user.id, overdue_rows),
-        due_today=await _hydrate_saved_lead_items(db, user.id, due_today_rows),
-        high_priority_untouched=await _hydrate_saved_lead_items(db, user.id, untouched_rows),
+        overdue=await _hydrate_saved_lead_items(db, user.id, overdue_rows, notes_by_business),
+        due_today=await _hydrate_saved_lead_items(db, user.id, due_today_rows, notes_by_business),
+        high_priority_untouched=await _hydrate_saved_lead_items(db, user.id, untouched_rows, notes_by_business),
         recent_route=recent_route,
-        blue_collar_today=await _hydrate_saved_lead_items(db, user.id, blue_collar_today_rows),
-        has_owner_name=await _hydrate_saved_lead_items(db, user.id, has_owner_rows),
+        blue_collar_today=await _hydrate_saved_lead_items(db, user.id, blue_collar_today_rows, notes_by_business),
+        has_owner_name=await _hydrate_saved_lead_items(db, user.id, has_owner_rows, notes_by_business),
     )
 
 
