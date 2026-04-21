@@ -75,11 +75,38 @@ def _is_duplicate(candidate: dict, kept: dict) -> bool:
 
 
 def _dedupe_leads(rows: list[dict]) -> list[dict]:
+    """O(n) dedup using phone/website indexes as fast-path candidate sets.
+
+    Full fuzzy name + geo check only runs against rows that share a phone or
+    website with the candidate — shrinks the comparison set from O(n) to O(k)
+    where k is the number of rows with the same contact identifier (typically 1).
+    """
     deduped: list[dict] = []
+    phone_index: dict[str, list[dict]] = {}
+    site_index: dict[str, list[dict]] = {}
+
     for row in rows:
-        if any(_is_duplicate(row, ex) for ex in deduped):
+        phone = (row.get("phone") or "").strip()
+        site = (row.get("website") or "").strip().lower().rstrip("/")
+
+        # Gather candidates that share phone or website — only these can match
+        candidates: list[dict] = []
+        if phone:
+            candidates.extend(phone_index.get(phone, []))
+        if site:
+            for c in site_index.get(site, []):
+                if c not in candidates:
+                    candidates.append(c)
+
+        if any(_is_duplicate(row, ex) for ex in candidates):
             continue
+
         deduped.append(row)
+        if phone:
+            phone_index.setdefault(phone, []).append(row)
+        if site:
+            site_index.setdefault(site, []).append(row)
+
     return deduped
 
 
